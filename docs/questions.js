@@ -294,6 +294,126 @@
         "只读解析、参数传递和避免不必要拷贝时很适合。",
         "如果需要长期持有内容、跨线程异步使用或修改底层字符串，就要非常小心生命周期。",
         "它优化的是接口层的数据视图，不是万能的字符串替代品。"
+      ]),
+      q("modern-decltype", "intermediate", true, "decltype 和 auto 有什么区别？什么时候会用到 decltype(auto)？", ["decltype", "auto", "decltype(auto)"], [
+        "auto 主要用于根据初始化表达式推导变量类型，而 decltype 更偏向按表达式规则精确保留类型信息。",
+        "decltype 常用于模板和泛型代码里推导返回类型，尤其是依赖表达式结果时。",
+        "decltype(auto) 适合想完整保留返回值类别和引用属性的包装函数，但也更容易引入意外引用语义。"
+      ]),
+      q("modern-override-final", "basic", true, "override 和 final 分别解决什么问题？", ["override", "final"], [
+        "override 用于显式声明派生类函数是在重写基类虚函数，能帮助编译器检查签名是否匹配。",
+        "final 可用于禁止某个虚函数继续被重写，或禁止某个类继续被继承。",
+        "它们都能减少继承体系里的隐式错误，让接口意图更清晰。"
+      ]),
+      q("modern-default-delete", "intermediate", true, "default 和 delete 修饰特殊成员函数时分别有什么意义？", ["default", "delete"], [
+        "default 表示让编译器按默认规则生成函数，同时保留你显式声明的意图。",
+        "delete 表示显式禁用某个函数，比如禁止拷贝构造或不允许某种参数转换。",
+        "它们比旧式把构造函数声明成 private 更直观，也更符合现代 C++ 的表达方式。"
+      ]),
+      q("modern-uniform-initialization", "intermediate", true, "统一初始化和列表初始化有什么好处？它有哪些坑？", ["列表初始化", "统一初始化"], [
+        "花括号初始化语法统一了很多初始化场景，也能阻止某些危险的窄化转换。",
+        "它有时会优先匹配 initializer_list 构造，导致看起来相似的写法走到不同重载。",
+        "面试里如果能提到 `vector<int> v{10, 20}` 和 `vector<int> v(10, 20)` 的区别，会很加分。"
+      ]),
+      q("modern-initializer-list", "intermediate", false, "initializer_list 在设计接口时适合什么场景？", ["initializer_list"], [
+        "initializer_list 适合让调用方用花括号简洁传入一组只读元素。",
+        "它常用于容器、配置项或批量构造场景，能提升接口可读性。",
+        "但它本身不拥有长期可写内存，底层元素生命周期和复制成本也要考虑。"
+      ]),
+      q("modern-noexcept", "intermediate", true, "noexcept 有什么作用？为什么它会影响性能和接口设计？", ["noexcept"], [
+        "noexcept 声明函数不会抛异常，既表达接口契约，也会影响标准库对移动操作的选择。",
+        "一些容器在扩容时更愿意使用 noexcept 的移动构造，因为这样能更安全地迁移元素。",
+        "如果错误地标 noexcept 却真的抛异常，程序通常会直接终止，所以不能乱加。"
+      ]),
+      q("modern-make-shared-unique", "intermediate", true, "make_unique 和 make_shared 相比直接 new 有什么优势？", ["make_unique", "make_shared"], [
+        "它们减少手写裸 new 的机会，让所有权表达更直接，也更符合异常安全风格。",
+        "make_shared 还能把控制块和对象一起分配，通常有更好的内存局部性。",
+        "但如果对象很大、生命周期和弱引用复杂，是否用 make_shared 也要结合场景判断。"
+      ]),
+      q("modern-future-promise-async", "advanced", false, "future、promise、async 分别适合什么场景？", ["future", "promise", "async"], [
+        "future 用来获取异步结果，promise 用来手动把结果或异常交给 future 的另一端。",
+        "async 是标准库提供的一种简单异步启动方式，适合轻量并发任务封装。",
+        "真正工程场景里还要关心线程创建策略、调度控制和资源回收，不能把 async 当万能线程池。"
+      ]),
+      q("modern-shared-ptr-internals", "advanced", true, "shared_ptr 的原理是什么？为什么它不是“零成本抽象”？", ["shared_ptr", "引用计数", "控制块"], [
+        "shared_ptr 通常包含指向对象的指针和指向控制块的指针，控制块里维护引用计数、弱引用计数以及删除器等信息。",
+        "多个 shared_ptr 共享同一个控制块，每次拷贝和销毁都要更新计数，这也是它相比 unique_ptr 更有运行时成本的原因。",
+        "它解决的是共享生命周期管理，不是对象线程安全；同时循环引用、控制块分配和原子计数开销都需要工程上权衡。"
+      ]),
+      q("modern-weak-ptr", "intermediate", true, "weak_ptr 到底解决了什么问题？lock() 背后表达的语义是什么？", ["weak_ptr", "shared_ptr", "lock"], [
+        "weak_ptr 主要用于表达“观察但不拥有”，避免把观察关系也计入共享所有权。",
+        "它最经典的用途是打破 shared_ptr 循环引用，否则对象可能逻辑上不可达却始终无法析构。",
+        "lock() 的语义是尝试在对象仍存活时临时提升成 shared_ptr，这一步本质上是在和对象生命周期做一次安全握手。"
+      ]),
+      q("modern-enable-shared-from-this", "advanced", true, "为什么会有 enable_shared_from_this？它解决了什么坑？", ["enable_shared_from_this", "shared_from_this"], [
+        "当对象已经被 shared_ptr 管理时，如果在成员函数里直接 `shared_ptr<this>`，会产生新的控制块，最终导致重复释放风险。",
+        "enable_shared_from_this 让对象能安全拿到与现有控制块绑定的 shared_ptr，而不是私自再造一份所有权。",
+        "它常出现在异步回调、自注册对象或需要把自身安全延长到任务完成的场景里。"
+      ]),
+      q("modern-condition-variable", "advanced", true, "condition_variable 在生产者消费者模型里怎么用？最常见的坑是什么？", ["condition_variable", "并发", "生产者消费者"], [
+        "condition_variable 通常和 mutex 配合，让线程在条件不满足时阻塞等待，而不是忙等浪费 CPU。",
+        "等待时应使用带谓词的 wait 写法，避免被虚假唤醒后直接误判条件成立。",
+        "答题时最好强调“状态 + 锁 + 条件变量”必须一起设计，notify 不是状态本身。"
+      ]),
+      q("modern-atomic-memory-order", "advanced", false, "atomic 的 memory_order 怎么理解？面试里至少要说清什么？", ["atomic", "memory_order", "并发"], [
+        "memory_order 讨论的是原子操作与其他读写之间的可见性和重排约束，而不只是“这个变量是不是原子的”。",
+        "大多数工程场景先掌握 sequentially consistent 作为最强语义，再理解 acquire-release 常用于发布/消费同步。",
+        "如果对内存模型掌握不深，面试里宁可先讲清使用边界和保守策略，也不要随意声称 relaxed 一定更优。"
+      ]),
+      q("modern-compare-exchange", "advanced", false, "compare_exchange_weak 和 compare_exchange_strong 有什么区别？为什么经常配合循环出现？", ["compare_exchange", "CAS", "atomic"], [
+        "这两个接口都在表达 CAS 语义，即“只有当前值仍等于预期值时才更新”。",
+        "weak 允许伪失败，所以通常放在循环里反复重试；strong 语义更强，但不代表所有平台都更划算。",
+        "面试里最好强调：CAS 只是构建无锁算法的基础原语，真正正确还要考虑 ABA、内存序和重试开销。"
+      ]),
+      q("modern-thread-lifecycle", "intermediate", true, "std::thread 的生命周期管理为什么经常被追问？join 和 detach 各自意味着什么？", ["std::thread", "join", "detach"], [
+        "std::thread 对象如果在仍 joinable 的状态下析构，会直接触发 terminate，这就是它经常被拿来考察的原因。",
+        "join 表示调用方等待线程完成并回收执行上下文，是更可控的生命周期收口方式。",
+        "detach 则把线程变成后台执行体，虽然省去了 join，但会把资源回收、退出时机和对象生命周期管理都变得更危险。"
+      ]),
+      q("modern-async-launch-policy", "advanced", true, "std::async 的 launch policy 为什么容易成为追问题？", ["std::async", "launch policy", "deferred"], [
+        "std::async 可以是立即异步执行，也可以是延迟到 `get()`/`wait()` 时才执行，具体取决于 launch policy。",
+        "如果不显式指定策略，不同实现可能做出不同选择，这会影响线程数、时序和性能预期。",
+        "很多面试官会借这个题追问你是否真正理解“接口看起来简单，但执行模型并不完全透明”。"
+      ]),
+      q("modern-thread-pool-design", "advanced", true, "如果让你设计一个简化版线程池，核心组件和关键权衡是什么？", ["线程池", "thread pool", "并发"], [
+        "最基本组件通常包括任务队列、工作线程集合、同步原语以及停止标志或生命周期管理逻辑。",
+        "设计时要考虑任务提交接口、异常传播、队列有界还是无界、关闭阶段如何 drain 剩余任务。",
+        "答题时能讲到“减少频繁创建线程的成本，但也要防止任务堆积和线程饥饿”，会更像工程视角。"
+      ]),
+      q("modern-structured-bindings", "basic", true, "结构化绑定（structured bindings）解决了什么问题？", ["structured bindings", "C++17"], [
+        "结构化绑定让 pair、tuple 和某些结构体的解包更自然，减少 `first`、`second` 这类样板访问。",
+        "它提升了遍历 map、函数多返回值和中间结果拆分时的可读性。",
+        "但要注意是按值还是按引用绑定，否则可能引入额外拷贝或修改不生效。"
+      ]),
+      q("modern-if-constexpr", "advanced", true, "if constexpr 和普通 if 在模板里有什么本质区别？", ["if constexpr", "C++17", "template"], [
+        "普通 if 即使分支逻辑运行时不执行，模板实例化时仍可能要求两边都语法成立。",
+        "if constexpr 会在编译期裁剪不满足条件的分支，非常适合做类型分派和模板静态选择。",
+        "它能显著降低模板特化和 enable_if 的复杂度，让泛型代码更易读。"
+      ]),
+      q("modern-sfinae-vs-if-constexpr", "advanced", false, "SFINAE 和 if constexpr 的区别是什么？现在工程里如何取舍？", ["SFINAE", "if constexpr", "template"], [
+        "SFINAE 依赖“替换失败不是错误”规则，在重载决议或模板匹配阶段淘汰不合法候选。",
+        "if constexpr 则是在模板已选中后，对函数体内部做编译期分支裁剪，表达更直观。",
+        "现代工程里如果只是写类型分派逻辑，通常优先考虑 if constexpr；但约束参与重载选择时，SFINAE 仍然有价值。"
+      ]),
+      q("modern-template-instantiation", "advanced", true, "模板实例化为什么会引发代码膨胀？工程里通常怎么控制？", ["模板实例化", "代码膨胀", "template"], [
+        "模板会针对不同类型参数生成不同实例，类型组合一多，二进制体积和编译时间都可能迅速上升。",
+        "如果模板函数过于庞大或放进热点头文件，膨胀问题会更明显，也会拖慢增量编译。",
+        "常见控制手段包括收缩模板边界、把非泛型逻辑下沉到普通函数、减少无必要的类型组合。"
+      ]),
+      q("modern-variadic-template-pitfalls", "advanced", false, "可变参模板常见的面试追问有哪些坑？", ["variadic template", "template", "forward"], [
+        "最典型的问题是参数包展开位置不对，或者转发时把值类别弄丢，导致额外拷贝甚至错误重载。",
+        "另一个高频坑是为了“泛型”把接口写得过宽，结果错误信息难读、调试成本很高。",
+        "回答时最好强调：可变参模板是能力很强的工具，但要配合清晰约束和最小必要接口使用。"
+      ]),
+      q("modern-fold-expressions", "advanced", false, "C++17 的 fold expression 解决了什么问题？", ["fold expression", "variadic template", "C++17"], [
+        "fold expression 让可变参数模板上的递归展开写法更简洁，减少模板递归样板代码。",
+        "它适合做参数包求和、批量调用、逻辑归约等模式化操作。",
+        "回答时可以点出它提升的是模板代码可读性和可维护性，而不只是“少写几行”。"
+      ]),
+      q("modern-filesystem", "intermediate", false, "C++17 的 filesystem 解决了哪些常见问题？", ["filesystem", "C++17"], [
+        "filesystem 为路径、目录遍历、文件存在性和属性查询提供了统一的标准库接口。",
+        "它让很多以前依赖平台 API 或第三方库的文件系统操作更可移植。",
+        "使用时仍要考虑异常处理、权限问题和不同平台上的路径差异。"
       ])
     ],
     "Linux 基础": [
@@ -426,6 +546,11 @@
         "它通常与 mutex 搭配使用，保证状态检查和休眠切换的正确性。",
         "要用谓词循环判断，防止伪唤醒或被其他线程抢先消费条件。"
       ]),
+      q("sync-spurious-wakeup", "advanced", true, "为什么条件变量等待时总强调要防止伪唤醒？", ["条件变量", "伪唤醒", "spurious wakeup"], [
+        "线程从 wait 返回并不自动等于业务条件已经成立，所以必须重新检查共享状态。",
+        "如果只在被唤醒后直接往下执行，可能在竞争条件下读到不满足条件的状态，形成隐藏 bug。",
+        "工程上最稳妥的写法是把条件检查放进谓词或 while 循环里，而不是依赖单次 if。"
+      ]),
       q("sync-atomic-vs-mutex", "intermediate", true, "atomic 和 mutex 的区别是什么？", ["atomic", "mutex"], [
         "atomic 适合简单共享变量的原子读改写，不需要把多个操作绑成事务。",
         "mutex 适合保护更复杂的不变量和多步状态更新。",
@@ -446,6 +571,11 @@
         "但写线程饥饿、公平性和实现开销都要考虑，不是所有读多写少场景都一定更快。",
         "回答时强调“先测量再选型”会更工程化。"
       ]),
+      q("sync-lock-granularity", "advanced", true, "锁粒度应该怎么权衡？为什么面试官喜欢继续追问这个问题？", ["锁粒度", "mutex", "并发"], [
+        "粗粒度锁实现简单、正确性更容易保证，但容易把无关请求也串行化。",
+        "细粒度锁可以提升并发度，却会增加锁数量、顺序复杂度和死锁排查成本。",
+        "真正工程化的回答不是“越细越好”，而是先明确共享状态边界，再结合热点路径和压测结果做拆分。"
+      ]),
       q("sync-semaphore", "intermediate", false, "信号量常用来解决什么问题？", ["semaphore"], [
         "信号量常用于控制并发访问数量，例如资源池、生产消费计数或限流。",
         "与 mutex 不同，它表达的是“许可数量”，不只是互斥进入。",
@@ -460,6 +590,11 @@
         "生产者消费者模型把数据生成和数据处理解耦，通过缓冲区或队列连接两者。",
         "它可以平滑处理速率不匹配的问题，也是任务队列、日志管道的常见结构。",
         "回答时可以顺带提到容量控制、阻塞策略和背压。"
+      ]),
+      q("sync-shared-memory-ring-buffer", "advanced", false, "如果用共享内存实现环形队列，最容易踩哪些同步和边界坑？", ["共享内存", "环形队列", "ring buffer"], [
+        "共享内存本身只解决“看见同一块数据”，不自动解决生产者和消费者之间的同步顺序问题。",
+        "环形队列设计里常见坑包括读写指针更新竞争、满和空状态判定二义性，以及缓存行争用。",
+        "高性能实现通常会把数据布局、内存屏障、单/多生产者模型和异常恢复策略一起考虑。"
       ]),
       q("sync-false-sharing", "advanced", false, "什么是伪共享（false sharing）？", ["false sharing"], [
         "不同线程修改不同变量，但这些变量落在同一个 cache line 上，也会引发缓存争用。",
@@ -508,15 +643,40 @@
         "epoll 把关注集合和就绪事件管理更多下沉到内核里，减少无效扫描。",
         "高并发时 epoll 通常更优，但还要看活跃连接比例和处理模型。"
       ]),
+      q("net-epoll-reactor-proactor", "advanced", true, "epoll、Reactor、Proactor 这几个概念之间是什么关系？", ["epoll", "Reactor", "Proactor"], [
+        "epoll 是 Linux 提供的 IO 多路复用机制，本身是底层事件通知能力，不等于完整服务器架构。",
+        "Reactor 更像“事件来了再分发处理”的设计模式，很多高并发网络库会基于 epoll 实现 Reactor。",
+        "Proactor 更强调异步操作完成后再通知，面试里能说清“系统机制”和“上层模型”不是同一层，就很加分。"
+      ]),
       q("net-lt-et", "advanced", true, "epoll 的 LT 和 ET 模式有什么区别？", ["LT", "ET", "epoll"], [
         "LT 只要缓冲区仍有数据就持续通知，编码简单。",
         "ET 只在状态变化时通知一次，要求尽量把数据一次性读写到 `EAGAIN`。",
         "ET 更容易提升效率，但没处理好非阻塞和读空逻辑就可能丢事件。"
       ]),
+      q("net-nonblocking-eagain", "advanced", true, "为什么讲 epoll 时经常会继续追问“非阻塞 + EAGAIN”处理？", ["非阻塞", "EAGAIN", "epoll"], [
+        "无论 ET 还是很多高并发读写模型，socket 通常都要配合非阻塞模式使用，否则单个连接可能把工作线程卡住。",
+        "读写返回 `EAGAIN`/`EWOULDBLOCK` 往往表示当前缓冲区状态暂时不允许继续操作，而不是连接出错。",
+        "如果把 `EAGAIN` 误当异常，或者没把缓冲区读写到位，就容易出现假性故障、事件遗漏或忙循环。"
+      ]),
+      q("net-backlog-half-open", "advanced", true, "半连接队列、全连接队列和 backlog 参数该怎么理解？", ["backlog", "半连接", "全连接"], [
+        "服务端监听 socket 后，握手进行中的连接和已经完成握手等待 accept 的连接，在实现上通常对应不同阶段的队列。",
+        "backlog 不是“无限排队数”，它受内核参数、实现细节和应用 accept 速度共同影响。",
+        "面试官喜欢追问这个，是因为它能看出你是否真正理解连接建立阶段的瓶颈，而不是只会背三次握手。"
+      ]),
+      q("net-reuseaddr-reuseport", "advanced", false, "SO_REUSEADDR 和 SO_REUSEPORT 的区别是什么？", ["SO_REUSEADDR", "SO_REUSEPORT", "socket"], [
+        "SO_REUSEADDR 常用于端口快速重用、处理 TIME_WAIT 影响等场景，但具体行为还受平台实现影响。",
+        "SO_REUSEPORT 更强调多个 socket 绑定同一地址端口组合，从而支持更灵活的多进程/多线程负载分担。",
+        "回答时最好强调不要把它们简单当成“解决端口占用的万能开关”，要结合监听模型和平台语义理解。"
+      ]),
       q("net-sticky-packet", "intermediate", true, "什么是粘包和拆包？如何解决？", ["粘包", "拆包"], [
         "TCP 是字节流，没有天然消息边界，所以接收端可能一次读到多条或半条业务消息。",
         "常见解决方式是长度字段、固定包头、分隔符或更完整的协议编解码层。",
         "面试里最好说明：这不是 TCP 的 bug，而是应用层消息边界设计问题。"
+      ]),
+      q("net-backpressure", "advanced", true, "高并发网络服务里为什么一定会谈到背压（backpressure）？", ["背压", "backpressure", "高并发"], [
+        "如果上游接收请求的速度远快于下游处理速度，队列、连接缓冲和内存占用就会不断膨胀，最终把系统拖垮。",
+        "背压本质上是在系统不同层之间传递“我处理不过来了”的信号，例如限流、暂停读、丢弃低优先级请求或收缩窗口。",
+        "面试里能把背压和吞吐、尾时延、稳定性联系起来，通常会比只谈“多开线程”更像真实工程经验。"
       ]),
       q("net-recv-zero-timewait", "intermediate", false, "recv 返回 0 表示什么？为什么会出现大量 TIME_WAIT？", ["recv", "TIME_WAIT"], [
         "recv 返回 0 通常表示对端已经有序关闭连接。",
@@ -544,6 +704,11 @@
         "strace 关注系统调用层，比如 open、read、connect、futex。",
         "ltrace 更关注动态库函数调用层。",
         "服务卡住、权限问题、连接失败时，strace 往往非常高效。"
+      ]),
+      q("debug-ss-lsof-strace", "advanced", true, "线上网络服务出问题时，ss、lsof、strace 这三个工具通常怎么配合？", ["ss", "lsof", "strace", "排障"], [
+        "ss 适合先看连接状态、监听端口、队列积压和 TCP 层现象，帮你快速判断是网络堆积还是应用不 accept/read/write。",
+        "lsof 更适合把端口、socket、文件描述符和具体进程实例对应起来，判断是不是 fd 泄漏或错误进程占用。",
+        "strace 则能进一步看到进程卡在什么系统调用上，把“网络异常”继续细化成 accept、epoll_wait、read、write 还是 futex 阻塞。"
       ]),
       q("debug-sanitizers", "intermediate", true, "ASan、TSan、UBSan 分别解决什么问题？", ["ASan", "TSan", "UBSan"], [
         "ASan 主要抓越界、use-after-free 等内存错误。",
@@ -579,6 +744,11 @@
         "先区分是输入流量变化、排队延迟、锁争用还是 IO 抖动造成。",
         "再看尾时延关联的线程、队列深度、系统调度和外部依赖响应。",
         "时延问题最怕只看平均值，必须盯住分位数和最坏情况。"
+      ]),
+      q("debug-futex-perf", "advanced", false, "perf 里看到大量 futex 时，你会怎么继续判断是正常等待还是锁争用问题？", ["perf", "futex", "锁争用"], [
+        "futex 本身只是用户态锁在需要睡眠/唤醒时进入内核的一种机制，看到它热并不自动等于代码有 bug。",
+        "关键要结合线程栈、业务负载、锁持有时间和热点调用链判断，是线程正常等待任务，还是被某把锁长期卡住。",
+        "如果只看到 futex 就盲目换无锁结构，很容易治标不治本；真正要定位的是谁持锁太久、谁等待过多以及为什么。"
       ])
     ],
     "性能优化": [
@@ -622,10 +792,20 @@
         "线程太少会吃不满资源，太多会增加切换、竞争和内存占用。",
         "比较成熟的回答是：先给经验值，再强调通过压测和监控校准。"
       ]),
+      q("perf-fd-limit-c10k", "advanced", true, "高并发服务为什么总会被追问 fd 上限和 C10K/C100K 问题？", ["fd", "C10K", "高并发"], [
+        "每个连接、文件、pipe 都会消耗文件描述符资源，高并发服务很容易先撞到 fd 上限，再谈不上更高吞吐。",
+        "所谓 C10K/C100K 并不是神秘数字游戏，本质是在问你的连接模型、事件分发、内存占用和系统资源是否能随规模稳定扩展。",
+        "工程上既要调系统参数，也要检查每连接成本、连接生命周期和是否存在 fd 泄漏。"
+      ]),
       q("perf-sync-vs-async", "advanced", false, "同步模型和异步模型如何做性能层面的取舍？", ["同步", "异步"], [
         "异步不一定更快，它更多解决的是等待期间如何提高资源利用率。",
         "同步模型更直接、易调试，但在高 IO 等待场景下可能浪费线程。",
         "是否异步取决于复杂度、延迟目标、错误处理和团队维护能力。"
+      ]),
+      q("perf-epoll-busy-loop", "advanced", false, "为什么基于 epoll 的服务仍然可能出现忙循环把 CPU 打满？", ["epoll", "busy loop", "CPU"], [
+        "如果事件处理逻辑没有正确消费完 socket 缓冲、错误处理把 `EAGAIN` 当成可立即重试，或者反复收到无效事件，事件循环就可能空转。",
+        "定时器、唤醒 fd、任务队列和连接状态机设计不当，也会让主循环在“没有真实业务进展”的情况下持续醒来。",
+        "这类问题说明有了 epoll 不等于天然高性能，关键还是事件循环是否真正避免了无效工作。"
       ]),
       q("perf-numa", "advanced", false, "什么是 NUMA？为什么有些高性能系统要关心它？", ["NUMA"], [
         "NUMA 机器上不同 CPU 节点访问本地和远端内存的成本不同。",

@@ -61,6 +61,23 @@ function getQuestionStats(questions) {
   };
 }
 
+function getHeroStatItems(stats, visibleCount) {
+  return [
+    { value: stats.total, label: "题目总数", shortLabel: "总数" },
+    { value: stats.categories, label: "专题数量", shortLabel: "专题" },
+    { value: stats.highFrequency, label: "高频题", shortLabel: "高频" },
+    { value: visibleCount, label: "当前结果", shortLabel: "结果" }
+  ];
+}
+
+function getHeroDescriptions() {
+  return {
+    full:
+      "把高频八股、系统知识、通信专项和项目表达题，整理成一个可浏览、可随机练习、可直接部署到 GitHub Pages 的轻量面试 Web App。",
+    compact: "把高频题和专题题整理成一个适合手机刷题与随机练习的轻量题库。"
+  };
+}
+
 function groupQuestionsByCategory(questions) {
   return questions.reduce((groups, item) => {
     if (!groups[item.category]) {
@@ -218,6 +235,27 @@ function getCategoryCounts(questions) {
   }, {});
 }
 
+function getCapabilityHint(category) {
+  const hints = {
+    "C++ 基础": "语法、对象模型、语言基础",
+    "面向对象": "继承、多态、设计原则",
+    "内存管理": "RAII、生命周期、资源所有权",
+    STL: "容器、算法、复杂度与失效规则",
+    "现代 C++": "C++11/14/17、并发、模板、工程语义",
+    "Linux 基础": "权限、系统接口、运行环境",
+    "进程与线程": "调度模型、上下文切换、线程基础",
+    "同步与并发": "锁、原子、等待唤醒与死锁",
+    "IPC 与网络": "socket、共享内存、事件模型",
+    "调试与排障": "定位思路、工具链、问题复盘",
+    "性能优化": "瓶颈分析、缓存、系统开销",
+    "通信与嵌入式专项": "协议理解、实时性、资源约束",
+    "项目深挖": "架构表达、取舍、结果复盘",
+    "HR / 场景表达": "沟通表达、协作方式、职业判断"
+  };
+
+  return hints[category] || "查看该专题";
+}
+
 function renderCapabilityMap(categories, counts) {
   return categories
     .map((category) => {
@@ -227,7 +265,7 @@ function renderCapabilityMap(categories, counts) {
           '">',
         '  <span class="capability-card-title">' + escapeHtml(category) + "</span>",
         '  <span class="capability-card-count">' + escapeHtml(counts[category] || 0) + " 题</span>",
-        "  <span class=\"capability-card-hint\">查看该专题</span>",
+        '  <span class="capability-card-hint">' + escapeHtml(getCapabilityHint(category)) + "</span>",
         "</button>"
       ].join("");
     })
@@ -316,6 +354,8 @@ function renderApp(container, questions, state) {
   const stats = getQuestionStats(questions);
   const visibleCount = filteredQuestions.length;
   const categoryCounts = getCategoryCounts(questions);
+  const heroStatItems = getHeroStatItems(stats, visibleCount);
+  const heroDescriptions = getHeroDescriptions();
   const browsePanel = [
     '<section class="browse-panel">',
     '  <div class="panel-header">',
@@ -346,7 +386,11 @@ function renderApp(container, questions, state) {
     '  <div class="hero-copy">',
     '    <p class="eyebrow">Portfolio Mini Web App</p>',
     "    <h1>C++ / Linux / 通信开发面试题库</h1>",
-    "    <p>把高频八股、系统知识、通信专项和项目表达题，整理成一个可浏览、可随机练习、可直接部署到 GitHub Pages 的轻量面试 Web App。</p>",
+    '    <p><span class="hero-description-full">' +
+      escapeHtml(heroDescriptions.full) +
+      '</span><span class="hero-description-compact">' +
+      escapeHtml(heroDescriptions.compact) +
+      "</span></p>",
     '    <div class="hero-actions">',
     '      <button class="primary-button" type="button" data-hero-action="browse">开始刷题</button>',
     '      <button class="secondary-button" type="button" data-hero-action="practice">随机练习</button>',
@@ -354,10 +398,19 @@ function renderApp(container, questions, state) {
     "    </div>",
     "  </div>",
     '  <div class="hero-stats">',
-    '    <div class="stat-card"><strong>' + stats.total + '</strong><span>题目总数</span></div>',
-    '    <div class="stat-card"><strong>' + stats.categories + '</strong><span>专题数量</span></div>',
-    '    <div class="stat-card"><strong>' + stats.highFrequency + '</strong><span>高频题</span></div>',
-    '    <div class="stat-card"><strong>' + visibleCount + '</strong><span>当前结果</span></div>',
+    heroStatItems
+      .map((item) => {
+        return (
+          '<div class="stat-card"><strong>' +
+          escapeHtml(item.value) +
+          '</strong><span class="stat-label-full">' +
+          escapeHtml(item.label) +
+          '</span><span class="stat-label-short">' +
+          escapeHtml(item.shortLabel) +
+          "</span></div>"
+        );
+      })
+      .join(""),
     "  </div>",
     "</section>",
     '<section class="capability-map">',
@@ -593,8 +646,11 @@ if (typeof module !== "undefined" && module.exports) {
     createPracticeState,
     movePracticeIndex,
     getQuestionStats,
+    getHeroDescriptions,
     groupQuestionsByCategory,
     getUniqueValues,
-    slugify
+    slugify,
+    getCapabilityHint,
+    getHeroStatItems
   };
 }
