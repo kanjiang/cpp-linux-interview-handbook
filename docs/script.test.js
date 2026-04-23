@@ -1,0 +1,108 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+const {
+  normalizeText,
+  filterQuestions,
+  createPracticeState,
+  movePracticeIndex,
+  getQuestionStats
+} = require("./script.js");
+const { questions } = require("./questions.js");
+
+const sampleQuestions = [
+  {
+    id: "cpp-pointer-reference",
+    category: "C++ basics",
+    question: "What is the difference between a pointer and a reference?",
+    difficulty: "basic",
+    highFrequency: true,
+    keywords: ["pointer", "reference"],
+    answerPoints: ["Pointers can be null and re-assigned."]
+  }
+];
+
+test("normalizeText lowercases and trims text", () => {
+  assert.equal(normalizeText("  Linux C++  "), "linux c++");
+});
+
+test("filterQuestions matches keyword search and high-frequency filter", () => {
+  const results = filterQuestions(sampleQuestions, {
+    search: "pointer",
+    category: "all",
+    difficulty: "all",
+    highFrequencyOnly: true
+  });
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, "cpp-pointer-reference");
+});
+
+test("filterQuestions narrows results by category and difficulty", () => {
+  const results = filterQuestions(
+    [
+      {
+        id: "linux-thread",
+        category: "Process and thread model",
+        question: "What is the difference between a process and a thread?",
+        difficulty: "basic",
+        highFrequency: true,
+        keywords: ["process", "thread"],
+        answerPoints: ["Processes isolate address spaces."]
+      },
+      {
+        id: "epoll-lt-et",
+        category: "Network programming",
+        question: "What is the difference between LT and ET in epoll?",
+        difficulty: "advanced",
+        highFrequency: true,
+        keywords: ["epoll", "lt", "et"],
+        answerPoints: ["ET requires draining until EAGAIN."]
+      }
+    ],
+    {
+      search: "",
+      category: "Network programming",
+      difficulty: "advanced",
+      highFrequencyOnly: false
+    }
+  );
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, "epoll-lt-et");
+});
+
+test("questions dataset includes multiple categories and usable answer points", () => {
+  assert.ok(questions.length >= 150);
+  assert.ok(new Set(questions.map((item) => item.category)).size >= 12);
+  assert.ok(questions.every((item) => item.answerPoints.length >= 3));
+});
+
+test("createPracticeState builds a filtered practice pool", () => {
+  const state = createPracticeState(questions, {
+    search: "",
+    category: "IPC 与网络",
+    difficulty: "all",
+    highFrequencyOnly: true
+  });
+
+  assert.ok(state.pool.length > 0);
+  assert.equal(state.currentIndex, 0);
+  assert.equal(state.pool.every((item) => item.category === "IPC 与网络"), true);
+  assert.equal(state.pool.every((item) => item.highFrequency), true);
+});
+
+test("movePracticeIndex stays inside pool boundaries", () => {
+  assert.equal(movePracticeIndex(0, 5, -1), 0);
+  assert.equal(movePracticeIndex(1, 5, -1), 0);
+  assert.equal(movePracticeIndex(3, 5, 1), 4);
+  assert.equal(movePracticeIndex(4, 5, 1), 4);
+});
+
+test("getQuestionStats summarizes total categories and high-frequency count", () => {
+  const stats = getQuestionStats(questions);
+
+  assert.ok(stats.total >= 150);
+  assert.ok(stats.categories >= 12);
+  assert.ok(stats.highFrequency > 0);
+});
