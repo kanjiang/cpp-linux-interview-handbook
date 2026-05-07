@@ -57,13 +57,11 @@ button {
 .app-shell {
   width: min(1240px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 26px 0 54px;
+  padding: 22px 0 46px;
 }
 
 .loading-state,
 .hero,
-.capability-map,
-.company-shortcut-panel,
 .mode-switcher,
 .controls-panel,
 .browse-panel,
@@ -77,8 +75,6 @@ button {
 }
 
 .loading-state,
-.capability-map,
-.company-shortcut-panel,
 .mode-switcher,
 .controls-panel,
 .browse-panel,
@@ -91,9 +87,9 @@ button {
 .hero-showcase {
   display: grid;
   grid-template-columns: 1.8fr 1fr;
-  gap: 24px;
-  padding: 36px;
-  margin-bottom: 22px;
+  gap: 20px;
+  padding: 30px;
+  margin-bottom: 18px;
   color: #f8fbff;
   background:
     linear-gradient(135deg, rgba(79, 140, 255, 0.32), rgba(34, 81, 209, 0.05)),
@@ -103,7 +99,7 @@ button {
 
 .hero-copy {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   align-content: center;
 }
 
@@ -117,15 +113,15 @@ button {
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(2.2rem, 4vw, 4rem);
-  line-height: 1.05;
+  font-size: clamp(2rem, 3.6vw, 3.4rem);
+  line-height: 1.08;
 }
 
 .hero p {
   margin: 0;
-  max-width: 780px;
+  max-width: 720px;
   color: rgba(233, 242, 255, 0.86);
-  line-height: 1.85;
+  line-height: 1.72;
 }
 
 .hero-actions {
@@ -137,23 +133,23 @@ button {
 .hero-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .stat-card {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 124px;
-  padding: 20px;
+  min-height: 112px;
+  padding: 18px;
   border-radius: 22px;
   border: 1px solid rgba(190, 214, 255, 0.15);
   background: rgba(10, 18, 34, 0.42);
 }
 
 .stat-card strong {
-  font-size: 2rem;
-  margin-bottom: 10px;
+  font-size: 1.8rem;
+  margin-bottom: 8px;
 }
 
 .stat-card span {
@@ -162,8 +158,7 @@ button {
 
 .primary-button,
 .secondary-button,
-.mode-button,
-.capability-card {
+.mode-button {
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
@@ -190,20 +185,17 @@ button {
 
 .primary-button:hover,
 .secondary-button:hover,
-.mode-button:hover,
-.capability-card:hover {
+.mode-button:hover {
   transform: translateY(-1px);
 }
 
-.capability-map,
-.company-shortcut-panel,
 .controls-panel,
 .browse-panel,
 .practice-shell,
 .review-guide,
 .site-footer {
   padding: 22px 24px;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .panel-header {
@@ -211,7 +203,7 @@ button {
   justify-content: space-between;
   align-items: end;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .panel-header h2,
@@ -229,76 +221,6 @@ button {
   margin: 0;
   color: var(--muted);
   line-height: 1.8;
-}
-
-.capability-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.company-filter-list {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.company-filter-chip {
-  display: grid;
-  gap: 10px;
-  padding: 18px;
-  text-align: left;
-  border-radius: 20px;
-  border: 1px solid rgba(79, 140, 255, 0.16);
-  background: linear-gradient(180deg, rgba(79, 140, 255, 0.08) 0%, rgba(255, 255, 255, 0.96) 100%);
-  color: var(--text);
-}
-
-.company-filter-chip.is-active {
-  border-color: rgba(34, 81, 209, 0.34);
-  box-shadow: 0 14px 30px rgba(34, 81, 209, 0.12);
-  background: linear-gradient(180deg, rgba(79, 140, 255, 0.18) 0%, rgba(255, 255, 255, 0.98) 100%);
-}
-
-.company-filter-label {
-  font-size: 1rem;
-  font-weight: 800;
-}
-
-.company-filter-meta {
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.company-filter-count {
-  color: var(--accent-strong);
-  font-weight: 700;
-}
-
-.capability-card {
-  display: grid;
-  gap: 10px;
-  padding: 18px;
-  text-align: left;
-  border-radius: 20px;
-  border: 1px solid rgba(79, 140, 255, 0.14);
-  background:
-    linear-gradient(180deg, rgba(79, 140, 255, 0.11) 0%, rgba(255, 255, 255, 0.92) 100%);
-}
-
-.capability-card-title {
-  font-weight: 800;
-  font-size: 1rem;
-}
-
-.capability-card-count {
-  color: var(--accent-strong);
-  font-weight: 700;
-}
-
-.capability-card-hint {
-  color: var(--muted);
-  font-size: 0.9rem;
 }
 
 .mode-switcher {
@@ -463,12 +385,12 @@ button {
 
 .category-list {
   display: grid;
-  gap: 26px;
+  gap: 22px;
 }
 
 .category-section {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .section-header {
@@ -476,22 +398,31 @@ button {
   justify-content: space-between;
   align-items: baseline;
   gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(79, 140, 255, 0.12);
 }
 
 .section-header h2 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.34rem;
+  line-height: 1.2;
 }
 
 .section-header p {
   margin: 0;
-  color: var(--muted);
+  min-width: 76px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-align: center;
 }
 
 .question-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 16px;
 }
 
 .question-card {
@@ -500,12 +431,23 @@ button {
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
   overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.question-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(79, 140, 255, 0.24);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.1);
+}
+
+.question-card details[open] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 249, 255, 0.98) 100%);
 }
 
 .question-summary {
   list-style: none;
   cursor: pointer;
-  padding: 22px;
+  padding: 20px;
 }
 
 .question-summary::-webkit-details-marker {
@@ -514,10 +456,17 @@ button {
 
 .question-summary::after {
   content: "展开要点";
-  display: inline-block;
-  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  margin-top: 16px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
   color: var(--accent-strong);
   font-weight: 700;
+  font-size: 0.88rem;
 }
 
 .question-card details[open] .question-summary::after {
@@ -527,8 +476,9 @@ button {
 .question-title,
 .practice-question {
   margin: 0;
-  font-size: 1.08rem;
-  line-height: 1.7;
+  font-size: 1.12rem;
+  line-height: 1.62;
+  color: #0b1b39;
 }
 
 .question-body,
@@ -561,6 +511,7 @@ button {
   font-size: 0.98rem;
   font-weight: 700;
   color: var(--accent-strong);
+  background: rgba(255, 255, 255, 0.68);
 }
 
 .answer-detail-summary::-webkit-details-marker {
@@ -702,11 +653,6 @@ button {
   .question-grid {
     grid-template-columns: 1fr;
   }
-
-  .capability-grid,
-  .company-filter-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 720px) {
@@ -717,25 +663,33 @@ button {
 
   .app-shell {
     width: min(100% - 20px, 1240px);
-    padding: 16px 0 36px;
+    padding: 14px 0 30px;
   }
 
   .hero-showcase,
-  .capability-map,
-  .company-shortcut-panel,
   .mode-switcher,
   .controls-panel,
   .browse-panel,
   .practice-shell,
   .review-guide,
   .site-footer {
-    padding: 18px;
+    padding: 16px;
     border-radius: 20px;
   }
 
-  .hero-stats,
-  .capability-grid,
-  .company-filter-list {
+  .hero-copy {
+    gap: 12px;
+  }
+
+  .hero h1 {
+    font-size: clamp(1.8rem, 9vw, 2.4rem);
+  }
+
+  .section-header p {
+    min-width: auto;
+  }
+
+  .hero-stats {
     grid-template-columns: 1fr;
   }
 

@@ -344,60 +344,6 @@ function getCategoryCounts(questions) {
   }, {});
 }
 
-function renderCapabilityMap(categories, counts) {
-  return categories
-    .map((category) => {
-      return [
-        '<button class="capability-card" type="button" data-jump-category="' +
-          escapeHtml(category) +
-          '">',
-        '  <span class="capability-card-title">' + escapeHtml(category) + "</span>",
-        '  <span class="capability-card-count">' + escapeHtml(counts[category] || 0) + " 题</span>",
-        "  <span class=\"capability-card-hint\">查看该专题</span>",
-        "</button>"
-      ].join("");
-    })
-    .join("");
-}
-
-function renderCompanyShortcutPanel(questions, state) {
-  const buttons = getCompanyTrackOptions()
-    .map((option) => {
-      const count = filterQuestions(questions, {
-        search: "",
-        category: "all",
-        difficulty: "all",
-        companyTrack: option.value,
-        highFrequencyOnly: false
-      }).length;
-
-      return [
-        '<button class="company-filter-chip' +
-          (state.filters.companyTrack === option.value ? " is-active" : "") +
-          '" type="button" data-company-track="' +
-          escapeHtml(option.value) +
-          '">',
-        '  <span class="company-filter-label">' + escapeHtml(option.label) + "</span>",
-        '  <span class="company-filter-meta">' + escapeHtml(option.description) + "</span>",
-        '  <span class="company-filter-count">' + escapeHtml(count) + " 题</span>",
-        "</button>"
-      ].join("");
-    })
-    .join("");
-
-  return [
-    '<section class="company-shortcut-panel">',
-    '  <div class="panel-header">',
-    "    <div>",
-    "      <h2>公司专项快捷入口</h2>",
-    "      <p>单独切到广立微岗位题、广立微编程题和芯片 / EDA 公司专项，定位更快。</p>",
-    "    </div>",
-    "  </div>",
-    '  <div class="company-filter-list">' + buttons + "</div>",
-    "</section>"
-  ].join("");
-}
-
 function renderPracticePanel(state) {
   if (!state.practice.pool.length) {
     return [
@@ -477,7 +423,6 @@ function renderApp(container, questions, state) {
   const stats = getQuestionStats(questions);
   const visibleCount = filteredQuestions.length;
   const categoryCounts = getCategoryCounts(questions);
-  const activeCompanyTrackLabel = formatCompanyTrackLabel(state.filters.companyTrack);
   const browsePanel = [
     '<section class="browse-panel">',
     '  <div class="panel-header">',
@@ -497,9 +442,7 @@ function renderApp(container, questions, state) {
     '<section class="results-summary">',
     "  <p>当前筛选后共有 <strong>" +
       visibleCount +
-      "</strong> 道题。当前快捷入口：<strong>" +
-      escapeHtml(activeCompanyTrackLabel) +
-      "</strong>。建议先刷高频题，再切到练习模式做随机抽题。</p>",
+      "</strong> 道题。建议先刷高频题，再切到练习模式做随机抽题。</p>",
     "</section>",
     '<section class="category-list">' + renderSections(filteredQuestions, state.expandAll) + "</section>",
     "</section>"
@@ -514,7 +457,6 @@ function renderApp(container, questions, state) {
     '    <div class="hero-actions">',
     '      <button class="primary-button" type="button" data-hero-action="browse">开始刷题</button>',
     '      <button class="secondary-button" type="button" data-hero-action="practice">随机练习</button>',
-    '      <button class="secondary-button" type="button" data-hero-action="company-special">公司专项</button>',
     '      <button class="secondary-button" type="button" data-hero-action="high-frequency">只看高频</button>',
     "    </div>",
     "  </div>",
@@ -525,11 +467,6 @@ function renderApp(container, questions, state) {
     '    <div class="stat-card"><strong>' + visibleCount + '</strong><span>当前结果</span></div>',
     "  </div>",
     "</section>",
-    '<section class="capability-map">',
-    "  <div class=\"panel-header\"><div><h2>能力地图</h2><p>按模块跳转，快速查看每个专题覆盖的题量。</p></div></div>",
-    '  <div class="capability-grid">' + renderCapabilityMap(categories, categoryCounts) + "</div>",
-    "</section>",
-    renderCompanyShortcutPanel(questions, state),
     renderModeSwitcher(state.mode),
     '<section class="controls-panel">',
     '  <div class="control-field control-search">',
@@ -625,8 +562,6 @@ function mountInterviewSite(globalScope) {
     const expandButtons = container.querySelectorAll("[data-expand]");
     const modeButtons = container.querySelectorAll("[data-mode]");
     const heroActions = container.querySelectorAll("[data-hero-action]");
-    const capabilityButtons = container.querySelectorAll("[data-jump-category]");
-    const companyTrackButtons = container.querySelectorAll("[data-company-track]");
     const practiceRevealButton = container.querySelector("[data-practice-reveal]");
     const practiceRandomButton = container.querySelector("[data-practice-random]");
     const practiceStepButtons = container.querySelectorAll("[data-practice-step]");
@@ -690,40 +625,12 @@ function mountInterviewSite(globalScope) {
         } else if (action === "practice") {
           state.mode = "practice";
           refreshPractice(getRandomIndex(filterQuestions(questions, state.filters).length));
-        } else if (action === "company-special") {
-          state.mode = "browse";
-          state.filters.companyTrack = "company-special";
-          state.filters.category = "all";
-          refreshPractice();
         } else if (action === "high-frequency") {
           state.mode = "browse";
           state.filters.highFrequencyOnly = true;
           refreshPractice();
         }
 
-        rerender();
-      });
-    });
-
-    capabilityButtons.forEach(function (button) {
-      button.addEventListener("click", function () {
-        state.mode = "browse";
-        state.filters.companyTrack = "all";
-        state.filters.category = button.getAttribute("data-jump-category");
-        refreshPractice();
-        rerender();
-        if (globalScope.location) {
-          globalScope.location.hash = slugify(state.filters.category);
-        }
-      });
-    });
-
-    companyTrackButtons.forEach(function (button) {
-      button.addEventListener("click", function () {
-        state.mode = "browse";
-        state.filters.companyTrack = button.getAttribute("data-company-track");
-        state.filters.category = "all";
-        refreshPractice();
         rerender();
       });
     });
