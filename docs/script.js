@@ -75,6 +75,7 @@ function filterQuestions(questions, filters) {
       ...(item.keywords || []),
       ...(item.answerPoints || []),
       ...(item.diagramSteps || []),
+      ...(item.pitfalls || []),
       ...(item.complexity || []),
       item.cppCode || ""
     ]
@@ -245,6 +246,19 @@ function renderAnswerContent(item) {
     });
   }
 
+  if (item.pitfalls && item.pitfalls.length) {
+    sections.push({
+      title: "易踩坑",
+      variantClass: "answer-pitfall-section",
+      body:
+        '<ul class="answer-points pitfalls-points">' +
+        item.pitfalls
+          .map((point) => "<li>" + escapeHtml(point) + "</li>")
+          .join("") +
+        '</ul>'
+    });
+  }
+
   if (item.cppCode) {
     sections.push({
       title: "C++ 参考代码",
@@ -303,14 +317,14 @@ function renderCategoryNavigation(categories, counts) {
   return categories
     .map((category) => {
       return (
-        '<a class="nav-chip" href="#' +
-        escapeHtml(slugify(category)) +
+        '<button class="nav-chip" type="button" data-category-jump="' +
+        escapeHtml(category) +
         '">' +
         escapeHtml(category) +
         '<span class="nav-chip-count">' +
         escapeHtml(counts[category] || 0) +
         "</span>" +
-        "</a>"
+        "</button>"
       );
     })
     .join("");
@@ -435,10 +449,13 @@ function renderApp(container, questions, state) {
     '      <button class="secondary-button" type="button" data-expand="none">收起全部</button>',
     "    </div>",
     "  </div>",
-    '<section class="quick-nav">',
-    "  <h2>专题入口</h2>",
+    '<details class="quick-nav quick-nav-details"' + (state.quickNavExpanded ? " open" : "") + '>',
+    '  <summary class="quick-nav-toggle">',
+    '    <span class="quick-nav-title">专题入口</span>',
+    '    <span class="quick-nav-meta">' + visibleCount + ' / ' + stats.total + ' 题</span>',
+    "  </summary>",
     '  <div class="nav-chip-list">' + renderCategoryNavigation(categories, categoryCounts) + "</div>",
-    "</section>",
+    "</details>",
     '<section class="results-summary">',
     "  <p>当前筛选后共有 <strong>" +
       visibleCount +
@@ -456,6 +473,7 @@ function renderApp(container, questions, state) {
     "    <p>把高频八股、系统知识、半导体 / EDA 岗位专项和项目表达题，整理成一个可浏览、可随机练习、可直接部署到 GitHub Pages 的轻量面试 Web App。</p>",
     '    <div class="hero-actions">',
     '      <button class="primary-button" type="button" data-hero-action="browse">开始刷题</button>',
+    '      <button class="secondary-button" type="button" data-hero-action="cpp-knowledge">C++ 知识入口</button>',
     '      <button class="secondary-button" type="button" data-hero-action="practice">随机练习</button>',
     '      <button class="secondary-button" type="button" data-hero-action="high-frequency">只看高频</button>',
     "    </div>",
@@ -532,6 +550,7 @@ function mountInterviewSite(globalScope) {
   const state = {
     mode: "browse",
     expandAll: false,
+    quickNavExpanded: false,
     filters: {
       search: "",
       category: "all",
@@ -552,6 +571,8 @@ function mountInterviewSite(globalScope) {
     state.practice = createPracticeState(questions, state.filters, startIndex);
   }
 
+  let pendingCategoryScroll = "";
+
   function rerender() {
     renderApp(container, questions, state);
 
@@ -562,6 +583,8 @@ function mountInterviewSite(globalScope) {
     const expandButtons = container.querySelectorAll("[data-expand]");
     const modeButtons = container.querySelectorAll("[data-mode]");
     const heroActions = container.querySelectorAll("[data-hero-action]");
+    const quickNavDetails = container.querySelector(".quick-nav-details");
+    const categoryJumpButtons = container.querySelectorAll("[data-category-jump]");
     const practiceRevealButton = container.querySelector("[data-practice-reveal]");
     const practiceRandomButton = container.querySelector("[data-practice-random]");
     const practiceStepButtons = container.querySelectorAll("[data-practice-step]");
@@ -621,16 +644,51 @@ function mountInterviewSite(globalScope) {
 
         if (action === "browse") {
           state.mode = "browse";
+          state.filters.category = "all";
+          state.filters.search = "";
           state.filters.companyTrack = "all";
+          state.filters.highFrequencyOnly = false;
+        } else if (action === "cpp-knowledge") {
+          state.mode = "browse";
+          state.filters.category = "C++ 知识直讲";
+          state.filters.search = "";
+          state.filters.companyTrack = "all";
+          state.filters.highFrequencyOnly = false;
+          refreshPractice();
         } else if (action === "practice") {
           state.mode = "practice";
           refreshPractice(getRandomIndex(filterQuestions(questions, state.filters).length));
         } else if (action === "high-frequency") {
           state.mode = "browse";
+          state.filters.category = "all";
+          state.filters.search = "";
           state.filters.highFrequencyOnly = true;
           refreshPractice();
         }
 
+        rerender();
+      });
+    });
+
+    if (quickNavDetails) {
+      quickNavDetails.addEventListener("toggle", function () {
+        state.quickNavExpanded = quickNavDetails.open;
+      });
+    }
+
+    categoryJumpButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        const targetCategory = button.getAttribute("data-category-jump");
+
+        state.mode = "browse";
+        state.quickNavExpanded = true;
+        state.filters.search = "";
+        state.filters.category = targetCategory;
+        state.filters.difficulty = "all";
+        state.filters.companyTrack = "all";
+        state.filters.highFrequencyOnly = false;
+        pendingCategoryScroll = targetCategory;
+        refreshPractice();
         rerender();
       });
     });
@@ -664,6 +722,15 @@ function mountInterviewSite(globalScope) {
         rerender();
       });
     });
+
+    if (pendingCategoryScroll) {
+      const targetSection = container.querySelector("#" + slugify(pendingCategoryScroll));
+      pendingCategoryScroll = "";
+
+      if (targetSection) {
+        targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
   }
 
   rerender();

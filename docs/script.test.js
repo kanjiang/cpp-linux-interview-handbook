@@ -122,6 +122,44 @@ test("questions dataset includes multiple categories and usable answer points", 
   assert.ok(questions.every((item) => item.answerPoints.length >= 3));
 });
 
+test("questions dataset includes cpp knowledge entry for this pointer", () => {
+  const entry = questions.find((item) => item.id === "cpp-knowledge-this-pointer");
+
+  assert.ok(entry);
+  assert.equal(entry.category, "C++ 知识直讲");
+  assert.ok(entry.diagramSteps.length >= 3);
+  assert.match(entry.cppCode, /this->value/);
+  assert.ok(entry.pitfalls.length >= 4);
+  assert.match(entry.pitfalls.join(" "), /悬空 this/);
+});
+
+test("questions dataset includes lambda knowledge entry with pitfalls", () => {
+  const entry = questions.find((item) => item.id === "cpp-knowledge-lambda");
+
+  assert.ok(entry);
+  assert.equal(entry.category, "C++ 知识直讲");
+  assert.ok(entry.diagramSteps.length >= 3);
+  assert.ok(entry.pitfalls.length >= 3);
+  assert.match(entry.question, /lambda/);
+});
+
+test("questions dataset includes move forward, virtual inheritance and std function knowledge entries", () => {
+  const ids = [
+    "cpp-knowledge-move-forward",
+    "cpp-knowledge-virtual-inheritance",
+    "cpp-knowledge-std-function"
+  ];
+
+  ids.forEach((id) => {
+    const entry = questions.find((item) => item.id === id);
+
+    assert.ok(entry);
+    assert.equal(entry.category, "C++ 知识直讲");
+    assert.ok(entry.answerPoints.length >= 4);
+    assert.ok(entry.pitfalls.length >= 2);
+  });
+});
+
 test("createPracticeState builds a filtered practice pool", () => {
   const state = createPracticeState(questions, {
     search: "",

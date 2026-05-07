@@ -80,6 +80,251 @@
         "这类题通常不会单独停在概念上，往往会继续追问 `std::move`、转发引用和完美转发。"
       ])
     ],
+    "C++ 知识直讲": [
+      q("cpp-knowledge-this-pointer", "intermediate", true, "详细说明 C++ 里的 this 指针是什么，它到底指向哪里？", ["this", "this 指针", "成员函数", "对象模型"], [
+        "可以把成员函数理解成一段所有对象共享的公共代码，而 this 就像系统在调用时偷偷塞进去的一张‘当前对象门牌号’。谁来调用这段代码，这张门牌号就指向谁。",
+        "当你写 `box.set(42)` 时，编译器更接近于把它理解成 `Box::set(&box, 42)`。也就是说，this 本质上是一个隐式参数，保存当前对象的地址。",
+        "在非静态成员函数里，this 的类型通常可理解为 `ClassName* const`。它指向的对象可以改，但 this 自己在这个函数执行过程中不会改指向别的对象。",
+        "之所以不同对象调用同一个成员函数却能改到各自的数据，就是因为每次调用时传进来的 this 不同。函数代码只有一份，但 this 让它知道现在该操作哪块对象内存。",
+        "如果成员函数被 `const` 修饰，那么 this 会变成指向常量对象的语义，也就是更接近 `const ClassName* const`，因此函数里不能随意修改普通成员。",
+        "要注意 this 通常不是对象里单独额外存着的一块字段，它更像调用成员函数时由编译器传进去的隐藏参数；真正对象内存里放的是成员数据，若类有虚函数还常会有实现相关的 vptr。"
+      ], {
+        diagramSteps: [
+          "先想象内存里有两个对象：`boxA` 和 `boxB`，它们各自占一块不同地址的数据区。",
+          "类里的成员函数 `setValue` 并不会在每个对象里复制一份，它更像一段统一存放的说明书代码。",
+          "当调用 `boxA.setValue(10)` 时，程序会把 `boxA` 的地址作为 this 传给 `setValue`，所以函数内部访问的是 `boxA` 那块内存。",
+          "当调用 `boxB.setValue(20)` 时，进入的还是同一段函数代码，但这次 this 换成了 `boxB` 的地址，于是改到的是另一块对象内存。",
+          "编译器生成成员函数调用代码时，会把对象地址放进约定好的参数位置，再让函数体通过 this 访问成员。",
+          "所以 this 不是“指向函数”，而是“指向当前正在使用这段函数代码的那个对象本身”。"
+        ],
+        pitfalls: [
+          "悬空 this：对象已经析构、异步回调还保留着 this，随后一访问成员就是典型 use-after-free。",
+          "链式调用别误返回临时值：如果本来要持续操作同一个对象，通常返回 `*this` 的引用，而不是返回一个新对象副本。",
+          "构造函数和析构函数里虽然能用 this，但此时对象还没完全构造好，或已经开始销毁，尤其别在这里依赖跨层级虚函数行为。",
+          "`this == nullptr` 不是正常对象语义。通过空指针去调用非静态成员函数本身就是未定义行为，哪怕函数体里暂时没访问成员也不能依赖。"
+        ],
+        cppCode: "class Box {\npublic:\n    int value = 0;\n\n    void setValue(int newValue) {\n        this->value = newValue;\n    }\n};\n\nint main() {\n    Box boxA;\n    Box boxB;\n\n    boxA.setValue(10);\n    boxB.setValue(20);\n\n    // 更接近编译器视角的理解：\n    // Box::setValue(&boxA, 10);\n    // Box::setValue(&boxB, 20);\n}\n",
+        complexity: [
+          "这不是算法题，重点不在时间复杂度，而在理解成员函数调用的底层传参模型。",
+          "如果面试官继续追问，可以顺着讲到 const 成员函数、static 成员函数没有 this、以及虚函数调用时 this 如何参与动态派发。"
+        ]
+      }),
+      q("cpp-knowledge-static-no-this", "intermediate", true, "为什么 static 成员函数里不能直接使用 this？", ["static", "this 指针", "成员函数"], [
+        "因为 static 成员函数不属于某一个具体对象，而是属于类本身，所以调用时没有‘当前对象地址’可以传入。",
+        "普通成员函数默认会隐式收到 this，因此能访问对象里的普通成员；static 成员函数没有这个隐式参数，只能直接访问静态成员或通过对象/指针间接访问实例成员。",
+        "如果把普通成员函数理解成 `Class::func(this, ...)`，那 static 成员函数更像普通的命名空间函数，只是被放进了类作用域里。",
+        "所以 static 成员函数不能直接调用非静态成员，根因不是语法限制，而是它根本不知道你想操作哪一个对象。"
+      ], {
+        diagramSteps: [
+          "非静态成员函数调用时，系统默认知道“当前是谁在调用”。",
+          "static 成员函数调用时，只知道“哪个类被调用了”，并不知道“哪个对象在调用”。",
+          "没有具体对象，自然就没有 this，也就无法直接定位某个对象里的普通成员变量。"
+        ],
+        pitfalls: [
+          "最常见误区是把 static 成员函数当成“只是少了一个对象名的普通成员函数”。实际上它从调用模型上就没有 this。",
+          "如果 static 函数里需要访问实例状态，就必须显式传对象、指针或引用进去，不要靠全局变量兜底。"
+        ]
+      }),
+      q("cpp-knowledge-this-chain", "intermediate", false, "为什么很多链式调用会返回 `*this`？", ["*this", "链式调用", "返回自身"], [
+        "链式调用的本质是：当前对象做完一次修改后，把自己再返回出去，让下一次调用还能接着作用在同一个对象上。",
+        "this 是指针，`*this` 才是当前对象本身，所以常见写法是返回 `*this` 的引用，也就是 `ClassName&`。",
+        "如果返回值而不是引用，就可能产生额外拷贝，链条里后续操作也未必还作用在原对象上。",
+        "这类设计在字符串拼接、配置构造器、流式接口里非常常见，面试回答时最好顺手说明为什么通常返回引用而不是值。"
+      ], {
+        pitfalls: [
+          "如果返回值而不是引用，链式调用很可能一直在操作副本，最后原对象并没有按预期被连续修改。",
+          "如果返回对临时对象或已经失效对象的引用，后续链式调用会直接踩到悬空引用问题。"
+        ],
+        cppCode: "class Builder {\npublic:\n    Builder& setA(int value) {\n        a_ = value;\n        return *this;\n    }\n\n    Builder& setB(int value) {\n        b_ = value;\n        return *this;\n    }\n\nprivate:\n    int a_ = 0;\n    int b_ = 0;\n};\n\nint main() {\n    Builder builder;\n    builder.setA(1).setB(2);\n}\n",
+        complexity: [
+          "核心收益不是复杂度优化，而是接口表达更顺，能把多个配置动作串成一句。",
+          "回答时可以补一句：如果函数返回的是临时对象或右值引用，还要额外考虑生命周期和移动语义。"
+        ]
+      }),
+      q("cpp-knowledge-vptr-vtable", "advanced", true, "虚函数、vptr、vtable 之间到底是什么关系？", ["虚函数", "vptr", "vtable", "动态派发"], [
+        "可以把 vtable 理解成一张“本类虚函数能力表”，表里记录了这个动态类型在各个虚函数槽位上应该跳到哪个实现。",
+        "而 vptr 则更像对象身上的“目录指针”，对象一旦构造完成，通常就会带着一个指向自己所属虚表的指针。",
+        "当你通过基类指针调用虚函数时，编译器不会直接写死目标函数，而是先沿着对象里的 vptr 找到虚表，再去表里取出对应槽位的函数地址。",
+        "所以动态派发的关键不是“指针类型是什么”，而是“对象运行时真正的动态类型是什么”，因为 vptr 跟着对象走，不跟着变量声明走。",
+        "回答这类题时要强调：vptr/vtable 是主流实现思路，不是标准强制的唯一实现，但工程上通常都这么理解。"
+      ], {
+        diagramSteps: [
+          "先有一个基类 `Base`，里面声明虚函数 `show()`；再有一个派生类 `Derived` 重写它。",
+          "`Base` 和 `Derived` 各自通常会有自己的虚表，里面记录本类型对应的虚函数入口。",
+          "当 `Base* ptr = new Derived();` 时，虽然变量类型是 `Base*`，但对象内部的 vptr 会指向 `Derived` 那张虚表。",
+          "此时调用 `ptr->show()`，程序会先从对象里拿到 vptr，再查虚表槽位，最后跳到 `Derived::show()`。",
+          "所以多态调用的决定时机在运行时，而不是仅靠编译时看到的指针静态类型。"
+        ],
+        pitfalls: [
+          "在构造函数和析构函数里调用虚函数时，动态派发不会按你想的“最派生类型”走，这里特别容易讲错。",
+          "把对象按值传给基类会发生切片，后面再谈虚表和多态时就已经不是原来的派生对象了。"
+        ],
+        cppCode: "#include <iostream>\nusing namespace std;\n\nclass Base {\npublic:\n    virtual void show() {\n        cout << \"Base::show\" << endl;\n    }\n};\n\nclass Derived : public Base {\npublic:\n    void show() override {\n        cout << \"Derived::show\" << endl;\n    }\n};\n\nint main() {\n    Base* ptr = new Derived();\n    ptr->show();\n    delete ptr;\n}\n"
+      }),
+      q("cpp-knowledge-forwarding-reference", "advanced", true, "为什么 `T&&` 有时是右值引用，有时又叫万能引用或转发引用？", ["T&&", "万能引用", "转发引用", "引用折叠"], [
+        "`T&&` 只有在模板类型推导或 `auto&&` 这类语境里，才可能成为转发引用。它最大的特点是：传左值时保持左值语义，传右值时保持右值语义。",
+        "如果 `T` 不是通过推导得到，而是已经被明确写死，比如 `Widget&&`，那它就是普通右值引用，不再具备“左右都能接”的行为。",
+        "真正让它看起来神奇的是引用折叠规则：左值传进来时，`T` 会被推成引用类型，最后折叠成左值引用；右值传进来时才会保留右值引用。",
+        "它的工程价值主要体现在完美转发上，也就是中间包装层不改变调用者原本的值类别，避免多余拷贝或错误地把左值当右值。",
+        "面试里最稳的说法是：不是所有 `&&` 都叫万能引用，只有“发生模板推导的 `T&&`”才是。"
+      ], {
+        diagramSteps: [
+          "看模板函数 `template <typename T> void wrapper(T&& arg)`，先不要急着把 `&&` 直接认成右值引用。",
+          "如果传入左值 `x`，编译器会把 `T` 推成 `int&`，于是参数类型变成 `int& &&`，再折叠成 `int&`。",
+          "如果传入右值 `10`，编译器会把 `T` 推成 `int`，于是参数类型就是 `int&&`。",
+          "这就是为什么同一份模板代码能同时接左值和右值，并且保留原来的值类别。"
+        ],
+        pitfalls: [
+          "不是所有 `&&` 都是万能引用，只有发生模板推导的 `T&&` 或 `auto&&` 才有这种语义。",
+          "包装层里如果直接把 `arg` 继续传出去而不用 `std::forward<T>(arg)`，右值信息就会丢掉。"
+        ],
+        cppCode: "#include <utility>\n\nvoid consume(int& value) {}\nvoid consume(int&& value) {}\n\ntemplate <typename T>\nvoid wrapper(T&& arg) {\n    consume(std::forward<T>(arg));\n}\n\nint main() {\n    int x = 1;\n    wrapper(x);   // 走左值版本\n    wrapper(10);  // 走右值版本\n}\n",
+        complexity: [
+          "这类题本身没有算法复杂度，考点是模板推导、引用折叠和完美转发的语义链条。",
+          "如果继续追问，通常会延伸到 `std::move` 和 `std::forward` 的区别。"
+        ]
+      }),
+      q("cpp-knowledge-smart-pointer-core", "intermediate", true, "智能指针的核心原理可以怎么形象理解？", ["智能指针", "unique_ptr", "shared_ptr", "weak_ptr"], [
+        "可以把 `unique_ptr` 理解成“一把钥匙只归一个人保管”，谁拿着它，谁负责对象生命周期，不能随便复制，只能转移。",
+        "`shared_ptr` 更像“多人合租同一套房”，内部会有一个引用计数控制块，只有最后一个持有者离开时，房子才真正被回收。",
+        "`weak_ptr` 则像“门口登记簿”，它知道对象还在不在，但不参与所有权计数，因此能避免两个对象互相拿 `shared_ptr` 把彼此永远留住。",
+        "所以智能指针解决的核心不是“语法更高级”，而是把所有权和释放时机从人脑记忆，收敛到类型语义里。",
+        "如果面试官继续深挖，通常会问到控制块、循环引用、线程安全边界，以及为什么 `make_shared` 可能更高效。"
+      ], {
+        diagramSteps: [
+          "先把裸指针世界想成：谁 new 的、谁 delete，经常靠约定和记忆，很容易漏。",
+          "`unique_ptr` 把规则写死成“只能有一个拥有者”，因此析构时机很清楚。",
+          "`shared_ptr` 在对象旁边再挂一个计数器，每复制一份共享指针，计数就加一；销毁一份就减一。",
+          "当计数降到 0 时，说明没人再拥有这个对象了，资源才真正释放。",
+          "如果两个对象互相持有 `shared_ptr`，计数会互相托住，此时就要把其中一边改成 `weak_ptr`。"
+        ],
+        pitfalls: [
+          "最常见坑是循环引用：双向关系两边都用 `shared_ptr`，对象逻辑上不可达但计数永远不归零。",
+          "智能指针解决的是所有权，不是线程安全。`shared_ptr` 控制块线程安全，不代表被管理对象天然线程安全。"
+        ],
+        cppCode: "#include <memory>\n\nstruct Node {\n    std::shared_ptr<Node> next;\n    std::weak_ptr<Node> prev;\n};\n\nint main() {\n    auto first = std::make_shared<Node>();\n    auto second = std::make_shared<Node>();\n\n    first->next = second;\n    second->prev = first;\n}\n"
+      }),
+      q("cpp-knowledge-object-layout", "intermediate", true, "对象大小、内存对齐、padding、空类大小这些点该怎么一起理解？", ["对象大小", "内存布局", "padding", "空类"], [
+        "对象大小不是简单把成员大小直接相加，因为编译器往往还要考虑对齐要求，在成员之间或末尾补 padding。",
+        "内存对齐的目的通常是让 CPU 更高效地访问数据，所以某些类型希望落在特定边界上，编译器就会据此调整布局。",
+        "空类即使没有数据成员，大小通常也至少是 1，因为语言需要保证不同对象有可区分的地址。",
+        "所以 `sizeof` 反映的是“这个类型实例在内存里要占多少字节”，不只是“你手写了多少成员”。",
+        "工程上理解这些点很重要，因为它会影响序列化、网络协议映射、缓存友好性，以及对象数组的整体内存占用。"
+      ], {
+        diagramSteps: [
+          "假设一个类里先放 `char`，再放 `int`，虽然成员只写了 1 + 4 个字节，但真实对象大小往往不是 5。",
+          "原因是 `int` 通常希望按更大的对齐边界存放，编译器会在 `char` 后面补几个字节，让 `int` 落到合适位置。",
+          "类整体结束后，编译器还可能再补尾部 padding，让对象数组里每个元素都能保持相同对齐。",
+          "空类虽然看起来“什么都没有”，但为了让两个不同对象地址可区分，也通常会保留至少 1 字节占位。"
+        ],
+        pitfalls: [
+          "别把成员大小直接相加当成对象大小，真正的 `sizeof` 经常会被对齐和尾部 padding 改写。",
+          "如果把结构体直接映射网络协议或磁盘二进制格式，不说明布局约束就很容易出兼容问题。"
+        ],
+        cppCode: "#include <iostream>\nusing namespace std;\n\nclass Empty {};\n\nclass Sample {\npublic:\n    char ch;\n    int value;\n};\n\nint main() {\n    cout << sizeof(Empty) << endl;\n    cout << sizeof(Sample) << endl;\n}\n",
+        complexity: [
+          "这类题没有算法复杂度，核心是理解类型布局规则如何影响真实对象大小。",
+          "如果项目涉及跨进程共享内存或二进制协议，还要额外关注对齐和编译器布局差异。"
+        ]
+      }),
+      q("cpp-knowledge-lambda", "intermediate", true, "lambda 到底是什么？捕获列表、闭包对象和常见坑该怎么一起讲清楚？", ["lambda", "捕获列表", "闭包对象", "回调"], [
+        "可以把 lambda 理解成“编译器帮你生成的一个匿名函数对象”。你写下的捕获变量，会变成这个匿名对象里的成员。",
+        "捕获列表决定闭包对象内部存什么：值捕获是把当时的值拷进去，引用捕获是把外部变量的别名绑进去。",
+        "lambda 本身不是普通函数指针；只有不捕获任何外部变量的 lambda，才可能退化成函数指针使用。",
+        "当 lambda 被传进算法、线程池、异步回调时，真正关键的不是语法，而是闭包对象里那些被捕获成员的生命周期和可见性。",
+        "面试里如果能讲清“lambda 是对象，operator() 是调用入口，捕获列表决定对象状态”，基本就已经比只会背语法强很多。"
+      ], {
+        diagramSteps: [
+          "先看 `int x = 10; auto fn = [x]() { return x + 1; };`，编译器不会只生成一段裸函数代码。",
+          "它更接近于生成一个匿名类，这个类里有一个成员保存被捕获的 `x`，还有一个 `operator()` 实现调用逻辑。",
+          "如果是值捕获，闭包对象里存的是创建 lambda 那一刻的副本；如果是引用捕获，闭包对象里存的是对外部变量的引用语义。",
+          "所以 lambda 调用时能不能安全访问外部数据，关键不在写法像不像函数，而在闭包对象里到底保存了什么。"
+        ],
+        pitfalls: [
+          "异步回调里最容易踩的是引用捕获或捕获 this：外部对象已经销毁，闭包里还在访问旧地址。",
+          "`[=]`、`[&]` 写起来很快，但会把真正捕获了什么藏起来，复杂代码里很容易把生命周期问题带进去。",
+          "默认情况下 lambda 的 `operator()` 是 const 的，所以值捕获变量不能直接改；如果确实要改副本，需要 `mutable`。",
+          "不要把“lambda 像函数”误解成“和函数没区别”。一旦有捕获，它本质上就是一个带状态的对象。"
+        ],
+        cppCode: "#include <iostream>\nusing namespace std;\n\nint main() {\n    int x = 10;\n\n    auto byValue = [x]() {\n        return x + 1;\n    };\n\n    auto byRef = [&x]() {\n        x += 5;\n    };\n\n    cout << byValue() << endl;\n    byRef();\n    cout << x << endl;\n}\n",
+        complexity: [
+          "这类题没有算法复杂度，考点是闭包对象模型、捕获语义和生命周期风险。",
+          "如果继续深挖，通常会延伸到泛型 lambda、`mutable`、捕获初始化以及和 `std::function` 的关系。"
+        ]
+      }),
+      q("cpp-knowledge-move-forward", "advanced", true, "`std::move` 和 `std::forward` 到底在做什么，为什么经常一起出现？", ["move", "forward", "右值", "完美转发"], [
+        "`std::move` 本身不搬运数据，它做的事情更接近于“把一个表达式显式转成右值语义”，告诉后续代码：这个对象的资源现在可以被拿走了。",
+        "`std::forward` 则是“按原样转发”。它主要出现在模板包装层里，用来保留调用者原本传进来的左值/右值属性。",
+        "如果说 `std::move` 是主动把对象标成可移动，那 `std::forward` 更像在说：我不要替调用者改主意，该是左值就继续按左值传，该是右值就继续按右值传。",
+        "两者经常一起出现，是因为现代 C++ 很多封装层都想避免多余拷贝，同时又不想错误地破坏上游参数的值类别。",
+        "面试里如果能把“move 改语义、forward 保语义”讲清楚，再配合模板推导场景，基本就不会答偏。"
+      ], {
+        diagramSteps: [
+          "先看一个已有对象 `std::string name`，当你写 `std::move(name)` 时，并没有立刻发生移动构造，它只是把 `name` 转成了右值语义。",
+          "后面如果某个构造函数或赋值函数接收到这个右值，才会真正选择移动版本，把内部资源接走。",
+          "再看模板包装函数 `wrapper(T&& arg)`，如果这里统一对 `arg` 用 `std::move`，那左值实参也会被强行变成右值，这是错误的。",
+          "所以模板里要用 `std::forward<T>(arg)`，让左值继续保持左值，右值继续保持右值。"
+        ],
+        pitfalls: [
+          "最常见误区是把 `std::move` 理解成“真的发生了移动”。它只是类型转换，真正移不移动由后续重载解析决定。",
+          "模板包装层里不要无脑对参数用 `std::move`，否则会把本来应该保留的左值语义破坏掉。",
+          "对象被 move 之后通常仍然必须保持“有效但值未指定”的状态，不能默认它就等于空或还能按原值使用。"
+        ],
+        cppCode: "#include <string>\n#include <utility>\nusing namespace std;\n\nvoid consume(const string& value) {}\nvoid consume(string&& value) {}\n\ntemplate <typename T>\nvoid wrapper(T&& arg) {\n    consume(std::forward<T>(arg));\n}\n\nint main() {\n    string name = \"cpp\";\n    consume(std::move(name));\n\n    string topic = \"lambda\";\n    wrapper(topic);\n    wrapper(string(\"move\"));\n}\n",
+        complexity: [
+          "这类题没有算法复杂度，重点是区分值类别转换和真正资源转移发生的时机。",
+          "继续追问时，常会延伸到转发引用、引用折叠、移动后对象状态和 noexcept。"
+        ]
+      }),
+      q("cpp-knowledge-virtual-inheritance", "advanced", true, "虚继承到底在解决什么问题？为什么菱形继承里会提到它？", ["虚继承", "菱形继承", "对象模型", "重复基类"], [
+        "虚继承主要是为了解决菱形继承里的“公共祖先基类被继承出多份”问题。",
+        "如果没有虚继承，最底层派生类对象里可能会同时带着两份同一个祖先基类子对象，访问祖先成员时会出现二义性。",
+        "用了虚继承之后，公共祖先基类会在最底层对象里只保留一份，多个中间层共享它。",
+        "它解决的是对象模型层面的重复基类问题，但代价是对象布局、构造责任和指针偏移都会更复杂。",
+        "所以虚继承不是“更高级的继承方式”，而是当继承结构已经走到菱形共享祖先时，用来消除重复基类的一种工具。"
+      ], {
+        diagramSteps: [
+          "先想象 `Animal` 被 `Mammal` 和 `Winged` 同时继承，`Bat` 再同时继承 `Mammal` 和 `Winged`。",
+          "如果普通继承，`Bat` 对象里可能会有两份 `Animal` 子对象，一份来自 `Mammal`，一份来自 `Winged`。",
+          "这时访问 `Animal::age` 之类的成员就会出现“到底走哪一份”的问题。",
+          "如果 `Mammal` 和 `Winged` 都对 `Animal` 使用虚继承，那么 `Bat` 最终只保留一份共享的 `Animal` 基类子对象。"
+        ],
+        pitfalls: [
+          "最容易踩的坑是只记住“虚继承解决菱形继承”，但讲不清它到底消除了什么重复，以及代价是什么。",
+          "虚继承后，最底层派生类通常承担虚基类初始化责任，这一点在构造函数题里很容易答错。",
+          "如果项目里一上来就用多层复杂继承再靠虚继承补洞，往往说明设计已经偏重，很多场景更该回头考虑组合。"
+        ],
+        cppCode: "#include <iostream>\nusing namespace std;\n\nclass Animal {\npublic:\n    int age = 1;\n};\n\nclass Mammal : virtual public Animal {};\nclass Winged : virtual public Animal {};\n\nclass Bat : public Mammal, public Winged {};\n\nint main() {\n    Bat bat;\n    bat.age = 3;\n    cout << bat.age << endl;\n}\n",
+        complexity: [
+          "这类题没有算法复杂度，核心是对象布局和继承模型的正确理解。",
+          "如果继续追问，通常会延伸到构造顺序、指针调整和虚基类初始化责任。"
+        ]
+      }),
+      q("cpp-knowledge-std-function", "intermediate", true, "`std::function` 是什么？它和函数指针、lambda、模板回调相比怎么理解？", ["std::function", "函数对象", "回调", "类型擦除"], [
+        "`std::function` 可以把“可调用对象”统一包成一个固定类型的盒子。函数指针、lambda、仿函数对象，只要签名能对上，都可以装进去。",
+        "它的核心价值在于接口统一：你不需要把具体可调用对象类型暴露到外部，调用方只需要知道它能按某个签名被调用。",
+        "背后的代价通常来自类型擦除，也就是为了屏蔽具体类型而引入的额外包装、间接调用以及有时的动态分配。",
+        "如果性能特别敏感，或者回调类型可以在编译期确定，模板参数往往比 `std::function` 更轻；如果你要做通用回调存储，`std::function` 就更方便。",
+        "面试里最好的回答方式不是说它“能装函数”，而是说清它解决的是“统一表示不同可调用对象”的问题，以及它的成本。"
+      ], {
+        diagramSteps: [
+          "先看函数指针，它只能接住普通函数或不捕获的 lambda，类型能力比较窄。",
+          "再看捕获 lambda，它其实是一个匿名对象，普通函数指针已经装不下它的状态。",
+          "`std::function<void()>` 就像一个统一容器，只要对象支持 `operator()` 且签名匹配，就能被装进去。",
+          "调用时外部不再关心里面到底是普通函数、lambda 还是仿函数对象，只关心这个盒子能不能被调用。"
+        ],
+        pitfalls: [
+          "最常见误区是把 `std::function` 当成“零成本抽象”。它通常比模板回调更重，尤其在高频路径里要注意开销。",
+          "空的 `std::function` 不能直接调用，调用前要么确保已绑定目标，要么先做有效性检查。",
+          "如果只是一次性泛型回调传递，很多时候模板参数已经够了，不需要为了统一而强行用 `std::function`。"
+        ],
+        cppCode: "#include <functional>\n#include <iostream>\nusing namespace std;\n\nvoid runTask(const function<void()>& task) {\n    task();\n}\n\nint main() {\n    int value = 10;\n\n    runTask([value]() {\n        cout << value << endl;\n    });\n}\n",
+        complexity: [
+          "这类题没有算法复杂度，核心是理解类型擦除带来的统一性和运行时成本。",
+          "如果继续深挖，通常会问到 small object optimization、拷贝语义和与模板回调的取舍。"
+        ]
+      })
+    ],
     "面向对象": [
       q("oop-overload-override-hide", "intermediate", true, "重载、重写、隐藏的区别是什么？", ["重载", "重写", "隐藏"], [
         "重载发生在同一作用域，函数名相同但参数列表不同。",
@@ -1616,6 +1861,7 @@
         keywords: item.keywords,
         answerPoints: item.answerPoints,
         diagramSteps: item.diagramSteps,
+        pitfalls: item.pitfalls,
         cppCode: item.cppCode,
         complexity: item.complexity
       };
