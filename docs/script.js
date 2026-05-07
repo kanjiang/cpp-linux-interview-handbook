@@ -17,11 +17,55 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function isCompanyCategory(category) {
+  return String(category || "").indexOf("广立微 /") === 0 || category === "芯片 / EDA 公司专项";
+}
+
+function matchesCompanyTrack(category, companyTrack) {
+  if (!companyTrack || companyTrack === "all") {
+    return true;
+  }
+
+  if (companyTrack === "company-special") {
+    return isCompanyCategory(category);
+  }
+
+  if (companyTrack === "guangliwei") {
+    return String(category || "").indexOf("广立微 /") === 0;
+  }
+
+  if (companyTrack === "guangliwei-coding") {
+    return category === "广立微 / 编程题";
+  }
+
+  if (companyTrack === "eda-company") {
+    return category === "芯片 / EDA 公司专项";
+  }
+
+  return true;
+}
+
+function getCompanyTrackOptions() {
+  return [
+    { value: "all", label: "全部题库", description: "恢复完整题库" },
+    { value: "company-special", label: "公司专项", description: "只看公司相关专题" },
+    { value: "guangliwei", label: "广立微岗位题", description: "广立微全部岗位与业务题" },
+    { value: "guangliwei-coding", label: "广立微编程题", description: "常见手写与算法题" },
+    { value: "eda-company", label: "芯片 / EDA 公司", description: "华大九天、概伦、芯原等通用题" }
+  ];
+}
+
+function formatCompanyTrackLabel(value) {
+  const option = getCompanyTrackOptions().find((item) => item.value === value);
+  return option ? option.label : "全部题库";
+}
+
 function filterQuestions(questions, filters) {
   const safeFilters = {
     search: normalizeText(filters && filters.search),
     category: (filters && filters.category) || "all",
     difficulty: (filters && filters.difficulty) || "all",
+    companyTrack: (filters && filters.companyTrack) || "all",
     highFrequencyOnly: Boolean(filters && filters.highFrequencyOnly)
   };
 
@@ -29,7 +73,10 @@ function filterQuestions(questions, filters) {
     const searchHaystack = [
       item.question,
       ...(item.keywords || []),
-      ...(item.answerPoints || [])
+      ...(item.answerPoints || []),
+      ...(item.diagramSteps || []),
+      ...(item.complexity || []),
+      item.cppCode || ""
     ]
       .map(normalizeText)
       .join(" ");
@@ -41,6 +88,10 @@ function filterQuestions(questions, filters) {
     const matchesDifficulty =
       safeFilters.difficulty === "all" ||
       item.difficulty === safeFilters.difficulty;
+    const matchesCompanyFilter = matchesCompanyTrack(
+      item.category,
+      safeFilters.companyTrack
+    );
     const matchesHighFrequency =
       !safeFilters.highFrequencyOnly || Boolean(item.highFrequency);
 
@@ -48,6 +99,7 @@ function filterQuestions(questions, filters) {
       matchesSearch &&
       matchesCategory &&
       matchesDifficulty &&
+      matchesCompanyFilter &&
       matchesHighFrequency
     );
   });
@@ -141,11 +193,85 @@ function createOptions(values, defaultLabel) {
     .join("");
 }
 
-function renderQuestionCard(item, forceOpen) {
-  const answerList = item.answerPoints
-    .map((point) => "<li>" + escapeHtml(point) + "</li>")
-    .join("");
+function renderAnswerSection(section, openByDefault, useCollapsibleLayout) {
+  if (!useCollapsibleLayout) {
+    return [
+      '<section class="answer-section' +
+        (section.variantClass ? " " + section.variantClass : "") +
+        '">',
+      '  <h4 class="answer-section-title">' + escapeHtml(section.title) + "</h4>",
+      section.body,
+      "</section>"
+    ].join("");
+  }
 
+  return [
+    '<details class="answer-detail' +
+      (section.variantClass ? " " + section.variantClass : "") +
+      '"' +
+      (openByDefault ? " open" : "") +
+      ">",
+    '  <summary class="answer-detail-summary">' + escapeHtml(section.title) + "</summary>",
+    '  <div class="answer-detail-body">' + section.body + "</div>",
+    "</details>"
+  ].join("");
+}
+
+function renderAnswerContent(item) {
+  const sections = [];
+
+  if (item.diagramSteps && item.diagramSteps.length) {
+    sections.push({
+      title: "图解步骤",
+      variantClass: "answer-diagram-section",
+      body:
+        '<ol class="answer-points answer-diagram-steps">' +
+        item.diagramSteps
+          .map((point) => "<li>" + escapeHtml(point) + "</li>")
+          .join("") +
+        "</ol>"
+    });
+  }
+
+  if (item.answerPoints && item.answerPoints.length) {
+    sections.push({
+      title: item.diagramSteps || item.cppCode || item.complexity ? "详细思路" : "回答要点",
+      body:
+        '<ul class="answer-points">' +
+        item.answerPoints
+          .map((point) => "<li>" + escapeHtml(point) + "</li>")
+          .join("") +
+        "</ul>"
+    });
+  }
+
+  if (item.cppCode) {
+    sections.push({
+      title: "C++ 参考代码",
+      body: '<pre class="answer-code-block"><code>' + escapeHtml(item.cppCode) + "</code></pre>"
+    });
+  }
+
+  if (item.complexity && item.complexity.length) {
+    sections.push({
+      title: "复杂度说明",
+      body:
+        '<ul class="answer-points complexity-points">' +
+        item.complexity
+          .map((point) => "<li>" + escapeHtml(point) + "</li>")
+          .join("") +
+        "</ul>"
+    });
+  }
+
+  const useCollapsibleLayout = sections.length > 1;
+
+  return sections
+    .map((section, index) => renderAnswerSection(section, index === 0, useCollapsibleLayout))
+    .join("");
+}
+
+function renderQuestionCard(item, forceOpen) {
   const keywords = item.keywords
     .map((keyword) => '<span class="chip chip-muted">' + escapeHtml(keyword) + "</span>")
     .join("");
@@ -166,7 +292,7 @@ function renderQuestionCard(item, forceOpen) {
     "    </summary>",
     '    <div class="question-body">',
     '      <div class="keyword-row">' + keywords + "</div>",
-    '      <ul class="answer-points">' + answerList + "</ul>",
+    renderAnswerContent(item),
     "    </div>",
     "  </details>",
     "</article>"
@@ -234,6 +360,44 @@ function renderCapabilityMap(categories, counts) {
     .join("");
 }
 
+function renderCompanyShortcutPanel(questions, state) {
+  const buttons = getCompanyTrackOptions()
+    .map((option) => {
+      const count = filterQuestions(questions, {
+        search: "",
+        category: "all",
+        difficulty: "all",
+        companyTrack: option.value,
+        highFrequencyOnly: false
+      }).length;
+
+      return [
+        '<button class="company-filter-chip' +
+          (state.filters.companyTrack === option.value ? " is-active" : "") +
+          '" type="button" data-company-track="' +
+          escapeHtml(option.value) +
+          '">',
+        '  <span class="company-filter-label">' + escapeHtml(option.label) + "</span>",
+        '  <span class="company-filter-meta">' + escapeHtml(option.description) + "</span>",
+        '  <span class="company-filter-count">' + escapeHtml(count) + " 题</span>",
+        "</button>"
+      ].join("");
+    })
+    .join("");
+
+  return [
+    '<section class="company-shortcut-panel">',
+    '  <div class="panel-header">',
+    "    <div>",
+    "      <h2>公司专项快捷入口</h2>",
+    "      <p>单独切到广立微岗位题、广立微编程题和芯片 / EDA 公司专项，定位更快。</p>",
+    "    </div>",
+    "  </div>",
+    '  <div class="company-filter-list">' + buttons + "</div>",
+    "</section>"
+  ].join("");
+}
+
 function renderPracticePanel(state) {
   if (!state.practice.pool.length) {
     return [
@@ -245,9 +409,6 @@ function renderPracticePanel(state) {
   }
 
   const currentQuestion = state.practice.pool[state.practice.currentIndex];
-  const answerList = currentQuestion.answerPoints
-    .map((point) => "<li>" + escapeHtml(point) + "</li>")
-    .join("");
 
   return [
     '<section class="practice-shell">',
@@ -289,7 +450,7 @@ function renderPracticePanel(state) {
     '      <button class="secondary-button" type="button" data-practice-step="1">下一题</button>',
     "    </div>",
     state.practice.revealAnswer
-      ? '    <div class="practice-answer"><ul class="answer-points">' + answerList + "</ul></div>"
+      ? '    <div class="practice-answer">' + renderAnswerContent(currentQuestion) + "</div>"
       : '    <div class="practice-answer-placeholder">先尝试自己组织回答，再点击按钮查看参考要点。</div>',
     "  </div>",
     "</section>"
@@ -316,6 +477,7 @@ function renderApp(container, questions, state) {
   const stats = getQuestionStats(questions);
   const visibleCount = filteredQuestions.length;
   const categoryCounts = getCategoryCounts(questions);
+  const activeCompanyTrackLabel = formatCompanyTrackLabel(state.filters.companyTrack);
   const browsePanel = [
     '<section class="browse-panel">',
     '  <div class="panel-header">',
@@ -335,7 +497,9 @@ function renderApp(container, questions, state) {
     '<section class="results-summary">',
     "  <p>当前筛选后共有 <strong>" +
       visibleCount +
-      "</strong> 道题。建议先刷高频题，再切到练习模式做随机抽题。</p>",
+      "</strong> 道题。当前快捷入口：<strong>" +
+      escapeHtml(activeCompanyTrackLabel) +
+      "</strong>。建议先刷高频题，再切到练习模式做随机抽题。</p>",
     "</section>",
     '<section class="category-list">' + renderSections(filteredQuestions, state.expandAll) + "</section>",
     "</section>"
@@ -345,11 +509,12 @@ function renderApp(container, questions, state) {
     '<section class="hero hero-showcase">',
     '  <div class="hero-copy">',
     '    <p class="eyebrow">Portfolio Mini Web App</p>',
-    "    <h1>C++ / Linux / 通信开发面试题库</h1>",
-    "    <p>把高频八股、系统知识、通信专项和项目表达题，整理成一个可浏览、可随机练习、可直接部署到 GitHub Pages 的轻量面试 Web App。</p>",
+    "    <h1>C++ / Linux / EDA / 半导体软件面试题库</h1>",
+    "    <p>把高频八股、系统知识、半导体 / EDA 岗位专项和项目表达题，整理成一个可浏览、可随机练习、可直接部署到 GitHub Pages 的轻量面试 Web App。</p>",
     '    <div class="hero-actions">',
     '      <button class="primary-button" type="button" data-hero-action="browse">开始刷题</button>',
     '      <button class="secondary-button" type="button" data-hero-action="practice">随机练习</button>',
+    '      <button class="secondary-button" type="button" data-hero-action="company-special">公司专项</button>',
     '      <button class="secondary-button" type="button" data-hero-action="high-frequency">只看高频</button>',
     "    </div>",
     "  </div>",
@@ -364,6 +529,7 @@ function renderApp(container, questions, state) {
     "  <div class=\"panel-header\"><div><h2>能力地图</h2><p>按模块跳转，快速查看每个专题覆盖的题量。</p></div></div>",
     '  <div class="capability-grid">' + renderCapabilityMap(categories, categoryCounts) + "</div>",
     "</section>",
+    renderCompanyShortcutPanel(questions, state),
     renderModeSwitcher(state.mode),
     '<section class="controls-panel">',
     '  <div class="control-field control-search">',
@@ -397,7 +563,7 @@ function renderApp(container, questions, state) {
     "  <ol>",
     "    <li>先按浏览模式系统过一遍基础模块，建立完整知识地图。</li>",
     "    <li>再切到练习模式，用随机抽题训练临场表达，而不是只看答案。</li>",
-    "    <li>最后重点刷通信专项、项目深挖和 HR 场景题，把“会做题”升级成“会讲项目”。</li>",
+    "    <li>最后重点刷半导体 / EDA 专项、项目深挖和 HR 场景题，把“会做题”升级成“会讲项目”。</li>",
     "  </ol>",
     "</section>",
     '<footer class="site-footer">',
@@ -433,12 +599,14 @@ function mountInterviewSite(globalScope) {
       search: "",
       category: "all",
       difficulty: "all",
+      companyTrack: "all",
       highFrequencyOnly: false
     },
     practice: createPracticeState(questions, {
       search: "",
       category: "all",
       difficulty: "all",
+      companyTrack: "all",
       highFrequencyOnly: false
     })
   };
@@ -458,6 +626,7 @@ function mountInterviewSite(globalScope) {
     const modeButtons = container.querySelectorAll("[data-mode]");
     const heroActions = container.querySelectorAll("[data-hero-action]");
     const capabilityButtons = container.querySelectorAll("[data-jump-category]");
+    const companyTrackButtons = container.querySelectorAll("[data-company-track]");
     const practiceRevealButton = container.querySelector("[data-practice-reveal]");
     const practiceRandomButton = container.querySelector("[data-practice-random]");
     const practiceStepButtons = container.querySelectorAll("[data-practice-step]");
@@ -517,9 +686,15 @@ function mountInterviewSite(globalScope) {
 
         if (action === "browse") {
           state.mode = "browse";
+          state.filters.companyTrack = "all";
         } else if (action === "practice") {
           state.mode = "practice";
           refreshPractice(getRandomIndex(filterQuestions(questions, state.filters).length));
+        } else if (action === "company-special") {
+          state.mode = "browse";
+          state.filters.companyTrack = "company-special";
+          state.filters.category = "all";
+          refreshPractice();
         } else if (action === "high-frequency") {
           state.mode = "browse";
           state.filters.highFrequencyOnly = true;
@@ -533,12 +708,23 @@ function mountInterviewSite(globalScope) {
     capabilityButtons.forEach(function (button) {
       button.addEventListener("click", function () {
         state.mode = "browse";
+        state.filters.companyTrack = "all";
         state.filters.category = button.getAttribute("data-jump-category");
         refreshPractice();
         rerender();
         if (globalScope.location) {
           globalScope.location.hash = slugify(state.filters.category);
         }
+      });
+    });
+
+    companyTrackButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        state.mode = "browse";
+        state.filters.companyTrack = button.getAttribute("data-company-track");
+        state.filters.category = "all";
+        refreshPractice();
+        rerender();
       });
     });
 

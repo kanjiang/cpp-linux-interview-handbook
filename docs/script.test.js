@@ -72,6 +72,50 @@ test("filterQuestions narrows results by category and difficulty", () => {
   assert.equal(results[0].id, "epoll-lt-et");
 });
 
+test("filterQuestions supports company special quick filters", () => {
+  const results = filterQuestions(
+    [
+      {
+        id: "glw-code",
+        category: "广立微 / 编程题",
+        question: "反转链表",
+        difficulty: "basic",
+        highFrequency: true,
+        keywords: ["链表"],
+        answerPoints: ["三指针法。"]
+      },
+      {
+        id: "eda-company",
+        category: "芯片 / EDA 公司专项",
+        question: "EDA 工具链价值",
+        difficulty: "basic",
+        highFrequency: true,
+        keywords: ["EDA"],
+        answerPoints: ["流程自动化。"]
+      },
+      {
+        id: "general-cpp",
+        category: "C++ 基础",
+        question: "什么是引用",
+        difficulty: "basic",
+        highFrequency: true,
+        keywords: ["引用"],
+        answerPoints: ["对象别名。"]
+      }
+    ],
+    {
+      search: "",
+      category: "all",
+      difficulty: "all",
+      companyTrack: "guangliwei",
+      highFrequencyOnly: false
+    }
+  );
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, "glw-code");
+});
+
 test("questions dataset includes multiple categories and usable answer points", () => {
   assert.ok(questions.length >= 150);
   assert.ok(new Set(questions.map((item) => item.category)).size >= 12);
