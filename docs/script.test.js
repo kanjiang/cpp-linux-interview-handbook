@@ -10,7 +10,8 @@ const {
   isCompanyCategory,
   matchesCompanyTrack,
   getCompanyTrackOptions,
-  readCompanyTrackFromLocation
+  readCompanyTrackFromLocation,
+  readCategoryFromLocation
 } = require("./script.js");
 const { questions } = require("./questions.js");
 
@@ -142,6 +143,21 @@ test("readCompanyTrackFromLocation reads company query", () => {
     "hundsun"
   );
   assert.equal(readCompanyTrackFromLocation({ search: "" }), "all");
+});
+
+test("readCategoryFromLocation reads known category query", () => {
+  assert.equal(
+    readCategoryFromLocation(
+      { search: "?category=%E6%81%92%E7%94%9F%20%2F%20C%2B%2B%E4%B8%8E%E5%86%85%E5%AD%98" },
+      questions
+    ),
+    "恒生 / C++与内存"
+  );
+  assert.equal(
+    readCategoryFromLocation({ search: "?category=不存在的分类" }, questions),
+    "all"
+  );
+  assert.equal(readCategoryFromLocation({ search: "" }, questions), "all");
 });
 
 test("questions dataset includes Hundsun company categories", () => {

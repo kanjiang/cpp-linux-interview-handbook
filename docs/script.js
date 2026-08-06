@@ -76,6 +76,24 @@ function readCompanyTrackFromLocation(locationLike) {
   return valid ? company : "all";
 }
 
+function readCategoryFromLocation(locationLike, questions) {
+  const search = (locationLike && locationLike.search) || "";
+  const normalized = search.charAt(0) === "?" ? search : search ? "?" + search : "";
+  const params = new URLSearchParams(normalized);
+  const category = params.get("category");
+
+  if (!category || category === "all") {
+    return "all";
+  }
+
+  const knownCategories = questions || [];
+  const exists = knownCategories.some(function (item) {
+    return item.category === category;
+  });
+
+  return exists ? category : "all";
+}
+
 function formatCompanyTrackLabel(value) {
   const option = getCompanyTrackOptions().find((item) => item.value === value);
   return option ? option.label : "全部题库";
@@ -595,6 +613,10 @@ function mountInterviewSite(globalScope) {
   const initialCompanyTrack = readCompanyTrackFromLocation(
     globalScope.location || { search: "" }
   );
+  const initialCategory = readCategoryFromLocation(
+    globalScope.location || { search: "" },
+    questions
+  );
 
   const state = {
     mode: "browse",
@@ -602,14 +624,14 @@ function mountInterviewSite(globalScope) {
     quickNavExpanded: false,
     filters: {
       search: "",
-      category: "all",
+      category: initialCategory,
       difficulty: "all",
       companyTrack: initialCompanyTrack,
       highFrequencyOnly: false
     },
     practice: createPracticeState(questions, {
       search: "",
-      category: "all",
+      category: initialCategory,
       difficulty: "all",
       companyTrack: initialCompanyTrack,
       highFrequencyOnly: false
@@ -620,7 +642,7 @@ function mountInterviewSite(globalScope) {
     state.practice = createPracticeState(questions, state.filters, startIndex);
   }
 
-  let pendingCategoryScroll = "";
+  let pendingCategoryScroll = initialCategory !== "all" ? initialCategory : "";
 
   function rerender() {
     renderApp(container, questions, state);
@@ -790,11 +812,23 @@ function mountInterviewSite(globalScope) {
     });
 
     if (pendingCategoryScroll) {
-      const targetSection = container.querySelector("#" + slugify(pendingCategoryScroll));
+      const slug = slugify(pendingCategoryScroll);
+      const doc = globalScope.document;
+      const targetSection =
+        (doc && typeof doc.getElementById === "function" && doc.getElementById(slug)) ||
+        container.querySelector('[id="' + slug.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]');
       pendingCategoryScroll = "";
 
       if (targetSection) {
-        targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        const scrollToTarget = function () {
+          targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+
+        if (typeof globalScope.requestAnimationFrame === "function") {
+          globalScope.requestAnimationFrame(scrollToTarget);
+        } else {
+          scrollToTarget();
+        }
       }
     }
   }
@@ -825,6 +859,7 @@ if (typeof module !== "undefined" && module.exports) {
     isCompanyCategory,
     matchesCompanyTrack,
     getCompanyTrackOptions,
-    readCompanyTrackFromLocation
+    readCompanyTrackFromLocation,
+    readCategoryFromLocation
   };
 }
