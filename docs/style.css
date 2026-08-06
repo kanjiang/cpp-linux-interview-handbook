@@ -176,6 +176,14 @@ button {
   font-weight: 700;
 }
 
+a.primary-button,
+a.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .primary-button {
   color: #f8fbff;
   background: linear-gradient(135deg, #5b96ff 0%, #2251d1 100%);
@@ -798,5 +806,132 @@ button {
   .quick-nav-toggle {
     align-items: start;
     flex-direction: column;
+  }
+}
+
+/* Hundsun interview prep page */
+.hundsun-page .hundsun-panel {
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px);
+  padding: 28px;
+  margin-bottom: 18px;
+}
+
+.hundsun-page .hundsun-panel h2 {
+  margin: 0 0 6px;
+}
+
+.hundsun-page .hundsun-panel .panel-header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.hundsun-meta-grid,
+.hundsun-check-groups,
+.hundsun-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.hundsun-meta-grid article,
+.hundsun-check-groups article {
+  background: rgba(79, 140, 255, 0.06);
+  border: 1px solid rgba(79, 140, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+}
+
+.hundsun-meta-grid h3,
+.hundsun-check-groups h3 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.hundsun-meta-grid p,
+.hundsun-meta-grid ul,
+.hundsun-check-list {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.hundsun-meta-grid ul,
+.hundsun-check-list {
+  padding-left: 18px;
+}
+
+.hundsun-check-list li + li {
+  margin-top: 8px;
+}
+
+.hundsun-skill-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(79, 140, 255, 0.16);
+  background: linear-gradient(180deg, #ffffff, #f5f8ff);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.hundsun-skill-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.hundsun-skill-card strong {
+  font-size: 1.05rem;
+}
+
+.hundsun-skill-card span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.hundsun-path-list {
+  margin: 18px 0 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.hundsun-path-list strong {
+  color: var(--text);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.hundsun-inline-actions {
+  margin-top: 20px;
+}
+
+.hundsun-page a.primary-button,
+.hundsun-page a.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+@media (max-width: 1080px) {
+  .hundsun-meta-grid,
+  .hundsun-check-groups,
+  .hundsun-skill-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .hundsun-page .hundsun-panel {
+    padding: 16px;
+    border-radius: 20px;
   }
 }

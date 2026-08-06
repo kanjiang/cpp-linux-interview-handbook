@@ -18,7 +18,12 @@ function escapeHtml(value) {
 }
 
 function isCompanyCategory(category) {
-  return String(category || "").indexOf("广立微 /") === 0 || category === "芯片 / EDA 公司专项";
+  const value = String(category || "");
+  return (
+    value.indexOf("广立微 /") === 0 ||
+    value.indexOf("恒生 /") === 0 ||
+    category === "芯片 / EDA 公司专项"
+  );
 }
 
 function matchesCompanyTrack(category, companyTrack) {
@@ -42,6 +47,10 @@ function matchesCompanyTrack(category, companyTrack) {
     return category === "芯片 / EDA 公司专项";
   }
 
+  if (companyTrack === "hundsun") {
+    return String(category || "").indexOf("恒生 /") === 0;
+  }
+
   return true;
 }
 
@@ -51,8 +60,20 @@ function getCompanyTrackOptions() {
     { value: "company-special", label: "公司专项", description: "只看公司相关专题" },
     { value: "guangliwei", label: "广立微岗位题", description: "广立微全部岗位与业务题" },
     { value: "guangliwei-coding", label: "广立微编程题", description: "常见手写与算法题" },
-    { value: "eda-company", label: "芯片 / EDA 公司", description: "华大九天、概伦、芯原等通用题" }
+    { value: "eda-company", label: "芯片 / EDA 公司", description: "华大九天、概伦、芯原等通用题" },
+    { value: "hundsun", label: "恒生岗位题", description: "恒生经纪业务 C++ 岗专项" }
   ];
+}
+
+function readCompanyTrackFromLocation(locationLike) {
+  const search = (locationLike && locationLike.search) || "";
+  const normalized = search.charAt(0) === "?" ? search : search ? "?" + search : "";
+  const params = new URLSearchParams(normalized);
+  const company = params.get("company");
+  const valid = getCompanyTrackOptions().some(function (item) {
+    return item.value === company;
+  });
+  return valid ? company : "all";
 }
 
 function formatCompanyTrackLabel(value) {
@@ -476,6 +497,8 @@ function renderApp(container, questions, state) {
     '      <button class="secondary-button" type="button" data-hero-action="cpp-knowledge">C++ 知识入口</button>',
     '      <button class="secondary-button" type="button" data-hero-action="practice">随机练习</button>',
     '      <button class="secondary-button" type="button" data-hero-action="high-frequency">只看高频</button>',
+    '      <button class="secondary-button" type="button" data-hero-action="hundsun">恒生岗位题</button>',
+    '      <a class="secondary-button" href="./hundsun.html">恒生面试准备</a>',
     "    </div>",
     "  </div>",
     '  <div class="hero-stats">',
@@ -505,6 +528,22 @@ function renderApp(container, questions, state) {
       createOptions(difficulties, "全部难度") +
       "</select>",
     "  </div>",
+    '  <div class="control-field">',
+    '    <label for="company-track-select">公司轨道</label>',
+    '    <select id="company-track-select">' +
+      getCompanyTrackOptions()
+        .map(function (item) {
+          return (
+            '<option value="' +
+            escapeHtml(item.value) +
+            '">' +
+            escapeHtml(item.label) +
+            "</option>"
+          );
+        })
+        .join("") +
+      "</select>",
+    "  </div>",
     '  <label class="toggle-field" for="high-frequency-toggle">',
     '    <input id="high-frequency-toggle" type="checkbox"' +
       (state.filters.highFrequencyOnly ? " checked" : "") +
@@ -519,6 +558,7 @@ function renderApp(container, questions, state) {
     "    <li>先按浏览模式系统过一遍基础模块，建立完整知识地图。</li>",
     "    <li>再切到练习模式，用随机抽题训练临场表达，而不是只看答案。</li>",
     "    <li>最后重点刷半导体 / EDA 专项、项目深挖和 HR 场景题，把“会做题”升级成“会讲项目”。</li>",
+    '    <li>若准备恒生经纪业务 C++ 岗，可先看 <a href="./hundsun.html">恒生面试准备页</a>，再用公司轨道筛选“恒生岗位题”。</li>',
     "  </ol>",
     "</section>",
     '<footer class="site-footer">',
@@ -529,6 +569,7 @@ function renderApp(container, questions, state) {
 
   const categorySelect = container.querySelector("#category-select");
   const difficultySelect = container.querySelector("#difficulty-select");
+  const companyTrackSelect = container.querySelector("#company-track-select");
 
   if (categorySelect) {
     categorySelect.value = state.filters.category;
@@ -536,6 +577,10 @@ function renderApp(container, questions, state) {
 
   if (difficultySelect) {
     difficultySelect.value = state.filters.difficulty;
+  }
+
+  if (companyTrackSelect) {
+    companyTrackSelect.value = state.filters.companyTrack;
   }
 }
 
@@ -547,6 +592,10 @@ function mountInterviewSite(globalScope) {
     return;
   }
 
+  const initialCompanyTrack = readCompanyTrackFromLocation(
+    globalScope.location || { search: "" }
+  );
+
   const state = {
     mode: "browse",
     expandAll: false,
@@ -555,14 +604,14 @@ function mountInterviewSite(globalScope) {
       search: "",
       category: "all",
       difficulty: "all",
-      companyTrack: "all",
+      companyTrack: initialCompanyTrack,
       highFrequencyOnly: false
     },
     practice: createPracticeState(questions, {
       search: "",
       category: "all",
       difficulty: "all",
-      companyTrack: "all",
+      companyTrack: initialCompanyTrack,
       highFrequencyOnly: false
     })
   };
@@ -579,6 +628,7 @@ function mountInterviewSite(globalScope) {
     const searchInput = container.querySelector("#search-input");
     const categorySelect = container.querySelector("#category-select");
     const difficultySelect = container.querySelector("#difficulty-select");
+    const companyTrackSelect = container.querySelector("#company-track-select");
     const highFrequencyToggle = container.querySelector("#high-frequency-toggle");
     const expandButtons = container.querySelectorAll("[data-expand]");
     const modeButtons = container.querySelectorAll("[data-mode]");
@@ -608,6 +658,14 @@ function mountInterviewSite(globalScope) {
     if (difficultySelect) {
       difficultySelect.addEventListener("change", function (event) {
         state.filters.difficulty = event.target.value;
+        refreshPractice();
+        rerender();
+      });
+    }
+
+    if (companyTrackSelect) {
+      companyTrackSelect.addEventListener("change", function (event) {
+        state.filters.companyTrack = event.target.value;
         refreshPractice();
         rerender();
       });
@@ -662,7 +720,15 @@ function mountInterviewSite(globalScope) {
           state.mode = "browse";
           state.filters.category = "all";
           state.filters.search = "";
+          state.filters.companyTrack = "all";
           state.filters.highFrequencyOnly = true;
+          refreshPractice();
+        } else if (action === "hundsun") {
+          state.mode = "browse";
+          state.filters.category = "all";
+          state.filters.search = "";
+          state.filters.companyTrack = "hundsun";
+          state.filters.highFrequencyOnly = false;
           refreshPractice();
         }
 
@@ -755,6 +821,10 @@ if (typeof module !== "undefined" && module.exports) {
     getQuestionStats,
     groupQuestionsByCategory,
     getUniqueValues,
-    slugify
+    slugify,
+    isCompanyCategory,
+    matchesCompanyTrack,
+    getCompanyTrackOptions,
+    readCompanyTrackFromLocation
   };
 }

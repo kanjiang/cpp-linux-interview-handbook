@@ -9,6 +9,7 @@ cpp-linux-interview-handbook/
   README.md
   docs/
     index.html
+    hundsun.html
     style.css
     script.js
     questions.js
@@ -23,15 +24,17 @@ cpp-linux-interview-handbook/
 - 随机抽题
 - 分类能力地图
 - 关键词搜索
-- 分类 / 难度 / 高频筛选
+- 分类 / 难度 / 高频 / 公司轨道筛选
 - 展开全部 / 收起全部
 - 每道题附标准回答要点
+- 恒生经纪业务 C++ 岗准备页（技能清单 + JD checklist + 复习路径）
 
 ## 本地预览
 
 最简单的方式是直接在浏览器中打开：
 
 - `docs/index.html`
+- `docs/hundsun.html`（恒生面试准备）
 
 如果你更习惯本地 HTTP 服务，也可以在仓库根目录执行：
 
@@ -42,6 +45,8 @@ python3 -m http.server 8000
 然后访问：
 
 - `http://localhost:8000/docs/`
+- `http://localhost:8000/docs/hundsun.html`
+- `http://localhost:8000/docs/index.html?company=hundsun`（预选恒生专题）
 
 ## 自动化检查
 

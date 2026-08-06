@@ -6,7 +6,11 @@ const {
   filterQuestions,
   createPracticeState,
   movePracticeIndex,
-  getQuestionStats
+  getQuestionStats,
+  isCompanyCategory,
+  matchesCompanyTrack,
+  getCompanyTrackOptions,
+  readCompanyTrackFromLocation
 } = require("./script.js");
 const { questions } = require("./questions.js");
 
@@ -114,6 +118,47 @@ test("filterQuestions supports company special quick filters", () => {
 
   assert.equal(results.length, 1);
   assert.equal(results[0].id, "glw-code");
+});
+
+test("isCompanyCategory recognizes Hundsun categories", () => {
+  assert.equal(isCompanyCategory("恒生 / C++与内存"), true);
+  assert.equal(isCompanyCategory("C++ 基础"), false);
+});
+
+test("matchesCompanyTrack filters Hundsun track", () => {
+  assert.equal(matchesCompanyTrack("恒生 / Linux与调试", "hundsun"), true);
+  assert.equal(matchesCompanyTrack("广立微 / C++ 岗", "hundsun"), false);
+  assert.equal(matchesCompanyTrack("恒生 / 系统设计", "company-special"), true);
+});
+
+test("getCompanyTrackOptions includes hundsun", () => {
+  const values = getCompanyTrackOptions().map((item) => item.value);
+  assert.ok(values.includes("hundsun"));
+});
+
+test("readCompanyTrackFromLocation reads company query", () => {
+  assert.equal(
+    readCompanyTrackFromLocation({ search: "?company=hundsun" }),
+    "hundsun"
+  );
+  assert.equal(readCompanyTrackFromLocation({ search: "" }), "all");
+});
+
+test("questions dataset includes Hundsun company categories", () => {
+  const categories = new Set(questions.map((item) => item.category));
+  [
+    "恒生 / 岗位与业务",
+    "恒生 / C++与内存",
+    "恒生 / Linux与调试",
+    "恒生 / 并发与进程",
+    "恒生 / 数据库基础",
+    "恒生 / 系统设计"
+  ].forEach((name) => assert.ok(categories.has(name)));
+
+  const hundsun = questions.filter((item) => item.category.indexOf("恒生 /") === 0);
+  assert.ok(hundsun.length >= 30);
+  assert.ok(hundsun.every((item) => item.id.indexOf("hs-") === 0));
+  assert.ok(hundsun.every((item) => item.answerPoints.length >= 3));
 });
 
 test("questions dataset includes multiple categories and usable answer points", () => {
