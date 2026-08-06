@@ -63,14 +63,22 @@ node --test docs/script.test.js
 
 ## 在线访问
 
-推荐使用 GitHub Pages（当前可用）：
+当前站点托管在 GitHub Pages / Vercel。**国内手机网络（即便开了代理）也经常打不开 `github.io` / `vercel.app`**，这通常是网络链路问题，不是页面本身坏了。
+
+可用地址（网络畅通时）：
 
 ```text
 https://kanjiang.github.io/cpp-linux-interview-handbook/
 https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun.html
 ```
 
-若使用 Vercel，请确认项目已成功部署，且 Dashboard 里的域名可解析；仓库根目录 `vercel.json` 已指定静态输出目录为 `docs/`。
+### 手机现在就要看：同一 Wi‑Fi 本地访问
+
+1. 电脑在仓库根目录执行：`python -m http.server 8000`
+2. 电脑执行 `ipconfig`，记下局域网 IP（例如 `192.168.1.8`）
+3. 手机浏览器打开：`http://192.168.1.8:8000/docs/` 或 `.../docs/hundsun.html`
+
+若需要国内公网稳定访问，建议改接到 Cloudflare Pages / 国内静态托管；需要的话我可以帮你改一键部署配置。
 
 
 1. 在 GitHub 新建一个普通仓库，例如 `cpp-linux-interview-handbook`
