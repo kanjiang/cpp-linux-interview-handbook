@@ -516,6 +516,7 @@ function renderApp(container, questions, state) {
     '      <button class="secondary-button" type="button" data-hero-action="practice">随机练习</button>',
     '      <button class="secondary-button" type="button" data-hero-action="high-frequency">只看高频</button>',
     '      <button class="secondary-button" type="button" data-hero-action="hundsun">恒生岗位题</button>',
+    '      <button class="secondary-button" type="button" data-hero-action="hundsun-knowledge">恒生知识直讲</button>',
     '      <a class="secondary-button" href="./hundsun.html">恒生面试准备</a>',
     "    </div>",
     "  </div>",
@@ -751,6 +752,14 @@ function mountInterviewSite(globalScope) {
           state.filters.search = "";
           state.filters.companyTrack = "hundsun";
           state.filters.highFrequencyOnly = false;
+          refreshPractice();
+        } else if (action === "hundsun-knowledge") {
+          state.mode = "browse";
+          state.filters.category = "恒生 / 知识直讲";
+          state.filters.search = "";
+          state.filters.companyTrack = "hundsun";
+          state.filters.highFrequencyOnly = false;
+          pendingCategoryScroll = "恒生 / 知识直讲";
           refreshPractice();
         }
 

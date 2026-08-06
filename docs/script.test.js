@@ -163,6 +163,7 @@ test("readCategoryFromLocation reads known category query", () => {
 test("questions dataset includes Hundsun company categories", () => {
   const categories = new Set(questions.map((item) => item.category));
   [
+    "恒生 / 知识直讲",
     "恒生 / 岗位与业务",
     "恒生 / C++与内存",
     "恒生 / Linux与调试",
@@ -175,6 +176,14 @@ test("questions dataset includes Hundsun company categories", () => {
   assert.ok(hundsun.length >= 30);
   assert.ok(hundsun.every((item) => item.id.indexOf("hs-") === 0));
   assert.ok(hundsun.every((item) => item.answerPoints.length >= 3));
+});
+
+test("Hundsun knowledge entries include study materials", () => {
+  const knowledge = questions.filter((item) => item.category === "恒生 / 知识直讲");
+  assert.ok(knowledge.length >= 8);
+  assert.ok(knowledge.every((item) => (item.diagramSteps || []).length >= 3));
+  assert.ok(knowledge.every((item) => (item.pitfalls || []).length >= 2));
+  assert.ok(knowledge.some((item) => Boolean(item.cppCode)));
 });
 
 test("questions dataset includes multiple categories and usable answer points", () => {
