@@ -61,7 +61,17 @@ python3 -m http.server 8000
 node --test docs/script.test.js
 ```
 
-## GitHub Pages 部署
+## 在线访问
+
+推荐使用 GitHub Pages（当前可用）：
+
+```text
+https://kanjiang.github.io/cpp-linux-interview-handbook/
+https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun.html
+```
+
+若使用 Vercel，请确认项目已成功部署，且 Dashboard 里的域名可解析；仓库根目录 `vercel.json` 已指定静态输出目录为 `docs/`。
+
 
 1. 在 GitHub 新建一个普通仓库，例如 `cpp-linux-interview-handbook`
 2. 把当前目录下的全部文件上传到该仓库
