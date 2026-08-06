@@ -76,6 +76,17 @@ node --test docs/script.test.js
 https://kanjiang.github.io/cpp-linux-interview-handbook/
 ```
 
+## Vercel 部署
+
+仓库已包含根目录 `vercel.json`，会把静态站点输出目录设为 `docs/`。
+
+1. 在 Vercel 导入该 GitHub 仓库
+2. Framework Preset 选 `Other`（或保持自动检测）
+3. 确认 Output Directory 为 `docs`（一般会被 `vercel.json` 覆盖）
+4. 部署完成后访问根路径即可打开题库；恒生准备页路径为 `/hundsun.html`
+
+若 Dashboard 里曾手动改过 Root Directory / Output Directory，以 `vercel.json` 为准，或把 Root Directory 留空、Output Directory 设为 `docs`。
+
 ## 题库结构
 
 题库数据都在：
