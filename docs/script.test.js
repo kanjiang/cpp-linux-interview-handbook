@@ -257,6 +257,17 @@ test("questions dataset includes rodata and consteval knowledge entries", () => 
   assert.match(constevalEntry.answerPoints.join(" "), /constinit/);
 });
 
+test("questions dataset includes constexpr vs define knowledge entry", () => {
+  const entry = questions.find((item) => item.id === "cpp-knowledge-constexpr-vs-define");
+
+  assert.ok(entry);
+  assert.equal(entry.category, "C++ 知识直讲");
+  assert.ok(entry.diagramSteps.length >= 4);
+  assert.ok(entry.pitfalls.length >= 3);
+  assert.match(entry.cppCode, /#define/);
+  assert.match(entry.answerPoints.join(" "), /预处理/);
+});
+
 test("createPracticeState builds a filtered practice pool", () => {
   const state = createPracticeState(questions, {
     search: "",

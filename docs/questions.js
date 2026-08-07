@@ -456,6 +456,59 @@
           "面试背诵版：`consteval` 强制编译期，比 `constexpr` 更严；好处是预计算、编译期校验、少运行开销，适合固定配置与协议常量。",
           "交易/底层场景可举例：CRC 表生成、报文定长校验、端口/魔数固化、区分编译配置与运行业务数据。"
         ]
+      }),
+      q("cpp-knowledge-constexpr-vs-define", "intermediate", true, "`constexpr` 和 `#define` 有什么本质区别？业务里怎么选型？", ["constexpr", "#define", "宏", "编译期", "预处理"], [
+        "`constexpr` 是编译期常量求值：变量、函数、构造都可以在编译期算出结果；`#define` 是预处理阶段的纯文本替换，没有类型、作用域和真正求值语义。",
+        "执行阶段不同最本质：宏在预编译时字符粘贴；`constexpr` 在编译器解析后做常量求值。",
+        "`const` 只保证只读，不一定是编译期常量；`constexpr` 变量必须编译期可确定，所以能做数组长度，而 `const int a = rand()` 不行。",
+        "`constexpr` 函数是双态：常量实参可编译期算，变量实参可运行期调用；需要强制只能编译期时再上 `consteval`。",
+        "宏的经典坑：运算符优先级、参数多次求值副作用、无类型难调试、全局污染易重名；`constexpr` 强类型、可作用域、可调试、参数只求值一次。",
+        "选型：数值常量、数组长度、协议端口、类内阈值优先 `constexpr`；`#define` 只保留头文件保护、条件编译、依赖 `__FILE__`/`__LINE__` 的日志宏。"
+      ], {
+        diagramSteps: [
+          "先画流水线：源码 → 预处理(#define) → 编译(constexpr 求值) → 汇编 → 链接。",
+          "看宏坑：`#define NUM 1+2` 后 `NUM*3` 变成 `1+2*3=7`；换成 `constexpr int NUM=1+2` 得 9。",
+          "看副作用：`GET_MAX(++x,2)` 宏可能让 `++x` 执行两次；`constexpr` 函数参数只求值一次。",
+          "看作用域与调试：宏全局替换、gdb 难见宏名；`constexpr` 有符号可打印，遵循块/命名空间作用域。",
+          "看实体：宏无内存可取；`constexpr` 常量常有符号，可进 `.rodata`，类内也能做 `static constexpr`。"
+        ],
+        pitfalls: [
+          "把 `const` 和 `constexpr` 混为一谈，说不清谁能当数组长度。",
+          "仍用宏写 `MAX(a,b)`，踩多次求值和优先级坑。",
+          "以为所有 `constexpr` 函数都只在编译期执行，忽略变量实参时的运行期路径。",
+          "把头文件保护和条件编译也强行改成 `constexpr`，这恰恰是宏仍该留下的场景。"
+        ],
+        cppCode: [
+          "#define NUM 1+2",
+          "#define GET_MAX(a, b) ((a) > (b) ? (a) : (b))",
+          "",
+          "constexpr int calc(int a, int b) {",
+          "    return a + b;",
+          "}",
+          "",
+          "struct Order {",
+          "    static constexpr int BUF_SIZE = 2048;",
+          "};",
+          "",
+          "int main() {",
+          "    int a = NUM * 3;                 // 宏：1+2*3 = 7",
+          "    constexpr int SAFE = 1 + 2;",
+          "    int b = SAFE * 3;               // constexpr：9",
+          "",
+          "    constexpr int res1 = calc(10, 20); // 编译期",
+          "    int x = 10, y = 20;",
+          "    int res2 = calc(x, y);           // 运行期",
+          "",
+          "    int t = 1;",
+          "    int m1 = GET_MAX(++t, 2);        // 宏可能多次 ++",
+          "    char buf[Order::BUF_SIZE];",
+          "    (void)a; (void)b; (void)res1; (void)res2; (void)m1; (void)buf;",
+          "}"
+        ].join("\n"),
+        complexity: [
+          "面试背诵抓五点：阶段、类型、作用域、副作用、实体；业务数值常量弃宏改 `constexpr`。",
+          "可继续追问：`consteval` 与 `constexpr` 函数差异，以及为何交易协议定长/端口更适合编译期常量。"
+        ]
       })
     ],
     "面向对象": [
