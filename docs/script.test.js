@@ -241,6 +241,22 @@ test("questions dataset includes array allocation knowledge entry", () => {
   assert.match(entry.answerPoints.join(" "), /栈/);
 });
 
+test("questions dataset includes rodata and consteval knowledge entries", () => {
+  const rodata = questions.find((item) => item.id === "cpp-knowledge-rodata");
+  const constevalEntry = questions.find((item) => item.id === "cpp-knowledge-consteval");
+
+  assert.ok(rodata);
+  assert.equal(rodata.category, "C++ 知识直讲");
+  assert.ok(rodata.diagramSteps.length >= 4);
+  assert.match(rodata.answerPoints.join(" "), /\.rodata/);
+
+  assert.ok(constevalEntry);
+  assert.equal(constevalEntry.category, "C++ 知识直讲");
+  assert.ok(constevalEntry.pitfalls.length >= 3);
+  assert.match(constevalEntry.cppCode, /consteval/);
+  assert.match(constevalEntry.answerPoints.join(" "), /constinit/);
+});
+
 test("createPracticeState builds a filtered practice pool", () => {
   const state = createPracticeState(questions, {
     search: "",

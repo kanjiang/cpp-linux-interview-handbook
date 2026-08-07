@@ -369,6 +369,91 @@
           "这不是算法复杂度题，重点是存储期、分配时机和区段。",
           "面试可接：栈溢出排查、BSS 与 DATA 区别、RAII 管理堆数组、为何交易系统慎用大栈对象。"
         ]
+      }),
+      q("cpp-knowledge-rodata", "intermediate", true, "`.rodata` 是什么？和 `.text` / `.data` / `.bss`、局部 const 有什么区别？", [".rodata", "只读段", "字符串字面量", "const", "ELF"], [
+        "`.rodata` 是 ELF 里的只读常量数据段；程序加载后对应内存页通常被标成只读，误写会触发 SIGSEGV。",
+        "常见内容：字符串字面量本体、全局 `const`/`constexpr` 常量、部分实现里的 vtable/RTTI、编译期固化常量等。",
+        "和别的段对比：`.text` 放指令；`.data` 放已初始化可写全局/静态变量；`.bss` 放未初始化全局/静态变量（加载时清零）；栈和堆是运行时动态区。",
+        "为什么单独放只读段：防误改常量、多进程可共享同一份物理页、常量固化进二进制启动即映射，不占堆栈动态分配。",
+        "关键易错点：函数内 `const int a = 100` 通常在栈上，只是语法只读，强转指针仍可能改掉；真正进 `.rodata` 的是全局常量或字符串字面量本体。"
+      ], {
+        diagramSteps: [
+          "先记四段：`.text` 指令、`.rodata` 只读常量、`.data` 已初始化可写、`.bss` 未初始化可写。",
+          "看 `const char* s = \"hello\"`：`\"hello\"` 在 `.rodata`，指针 `s` 本身可能在栈或全局区。",
+          "看全局 `constexpr int PORT = 8080` / `const double PI`：常量数据倾向落入只读区。",
+          "看局部 `const int a = 100`：多数情况下在栈，不等于进了 `.rodata`。",
+          "运行时若向只读页写：操作系统保护触发段错误，这正是只读段的价值。"
+        ],
+        pitfalls: [
+          "把所有 `const` 都说成在 `.rodata`，忽略局部 const 常见在栈。",
+          "混淆指针位置和所指对象位置：指针变量区段 ≠ 字符串字面量区段。",
+          "把 `.bss` 说成编译期已经把全零写进文件；通常只记录大小，加载时清零。",
+          "以为 `.rodata` 和 `.text` 一样只放代码；`.rodata` 放的是只读数据。"
+        ],
+        cppCode: [
+          "constexpr int PORT = 8080;      // 全局常量，倾向 .rodata",
+          "const double PI = 3.14159;",
+          "",
+          "void func() {",
+          "    const int a = 100;          // 局部 const：通常在栈",
+          "    constexpr int b = 100;      // 常被编译期折叠，未必占栈槽",
+          "    const char* str = \"abc\";   // \"abc\" 在 .rodata，str 在栈",
+          "    (void)a; (void)b; (void)str;",
+          "}"
+        ].join("\n"),
+        complexity: [
+          "面试背诵版：`.rodata` 放字面量/全局常量等只读数据，页只读防篡改，可跨进程共享；局部 const 不在这个故事里。",
+          "可继续追问：如何用 `readelf -S` / `objdump -s -j .rodata` 验证，以及为何交易配置常量更适合固化只读。"
+        ]
+      }),
+      q("cpp-knowledge-consteval", "advanced", true, "`consteval` 是什么？和 `constexpr` / `const` / `constinit` 怎么选？", ["consteval", "constexpr", "constinit", "C++20", "编译期"], [
+        "`consteval` 是 C++20 的强制编译期函数：只能在编译期求值，禁止运行时调用；实参必须是编译期常量，否则直接编译失败。",
+        "对比三兄弟：`const` 偏语法只读；`constexpr` 可编译期也可运行期（双模）；`consteval` 只允许编译期（单模强制）。",
+        "工程价值：把固定计算（表生成、掩码、校验）前置到编译期，减少运行期 CPU；把阈值校验提前到编译失败，避免上线才崩。",
+        "低延迟视角：结果常被折叠成立即数，少一次真实函数调用与分支，指令更干净。",
+        "接口设计上可强制区分：端口、缓冲大小、协议魔数用编译期参数；行情价、委托量才是运行期数据。",
+        "配套 `constinit`：保证静态变量初始化在加载时完成，帮助规避静态初始化顺序问题；常和编译期常量配置一起出现。"
+      ], {
+        diagramSteps: [
+          "先写一个 `consteval int pow2(int x) { return x * x; }`。",
+          "`constexpr int a = pow2(10);` 合法：编译期算出 100。",
+          "`int n = 10; int b = pow2(n);` 非法：运行期实参，consteval 直接拒绝。",
+          "换成 `constexpr` 函数：常量实参可编译期算，变量实参仍可运行期调用。",
+          "选型口诀：要灵活用 `constexpr`；必须强制编译期校验/预计算用 `consteval`；静态初始化时序用 `constinit`。"
+        ],
+        pitfalls: [
+          "把 `consteval` 和 `constexpr` 当成同义词，说不清“能不能运行时调用”。",
+          "在必须接收运行期参数的热路径接口上误用 `consteval`，导致接口根本无法调用。",
+          "以为编译期 `throw` 会变成运行异常；在 consteval/常量求值语境里它通常直接让编译失败。",
+          "忽略 `constinit`：它不负责“只读”，而负责“静态初始化时机”。"
+        ],
+        cppCode: [
+          "consteval int pow2(int x) {",
+          "    return x * x;",
+          "}",
+          "",
+          "consteval std::size_t check_buf_len(std::size_t len) {",
+          "    if (len > 4096) {",
+          "        throw \"缓冲区超限\"; // 常量求值失败 -> 编译期报错",
+          "    }",
+          "    return len;",
+          "}",
+          "",
+          "constinit constexpr int g_port = 9999;",
+          "",
+          "int main() {",
+          "    constexpr int a = pow2(10);          // OK",
+          "    constexpr std::size_t BUF = check_buf_len(2048); // OK",
+          "    char arr[BUF];",
+          "    (void)a; (void)arr; (void)g_port;",
+          "    // int n = 10; int b = pow2(n);     // 编译失败",
+          "    // constexpr auto bad = check_buf_len(8192); // 编译失败",
+          "}"
+        ].join("\n"),
+        complexity: [
+          "面试背诵版：`consteval` 强制编译期，比 `constexpr` 更严；好处是预计算、编译期校验、少运行开销，适合固定配置与协议常量。",
+          "交易/底层场景可举例：CRC 表生成、报文定长校验、端口/魔数固化、区分编译配置与运行业务数据。"
+        ]
       })
     ],
     "面向对象": [
