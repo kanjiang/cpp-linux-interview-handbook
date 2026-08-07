@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>恒生UF3.0全内存柜台 · 面试全套基础知识</title>
+  <meta name="description" content="恒生经纪业务 UF3.0 全内存柜台 C++ 后端面试基础知识：高性能 C++、Linux/网络、全内存架构、证券业务、高频真题。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">UF3.0 Interview Handbook · V1.0</p>
+        <h1>恒生电子 · 经纪业务 C++ 面试全套基础知识</h1>
+        <p>适配岗位：恒生 UF3.0 全内存柜台 C++ 后端。核心约束：低延迟、无 GC 停顿、订单零丢失、状态强一致。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./hundsun-uf3-memo.html">打开精简背诵版</a>
+          <a class="secondary-button" href="./hundsun.html">返回恒生准备页</a>
+          <a class="secondary-button" href="./index.html?company=hundsun">刷专题题</a>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="stat-card"><strong>5</strong><span>知识篇章</span></div>
+        <div class="stat-card"><strong>C++</strong><span>高性能语法</span></div>
+        <div class="stat-card"><strong>UF3</strong><span>全内存架构</span></div>
+        <div class="stat-card"><strong>业务</strong><span>经纪柜台</span></div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#preface">前言</a></li>
+        <li><a href="#cpp">第一篇 · 金融场景高性能 C++</a></li>
+        <li><a href="#linux">第二篇 · Linux 系统与网络</a></li>
+        <li><a href="#arch">第三篇 · UF3.0 全内存交易架构</a></li>
+        <li><a href="#biz">第四篇 · 证券经纪业务基础</a></li>
+        <li><a href="#qa">第五篇 · 高频面试真题话术</a></li>
+        <li><a href="#tips">文档使用建议</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="preface">
+      <h2>前言</h2>
+      <p>恒生经纪业务核心载体为 <strong>UF3.0 新一代全内存交易柜台</strong>。岗位核心诉求：基于 C++ 开发低延迟交易内核、订单链路处理、内存状态管理、WAL 日志持久化、进程故障恢复、风控模块开发。</p>
+      <p>技术考察偏向 <strong>高性能 C++ + Linux 底层 + 交易架构 + 金融业务融合</strong>，区别于互联网后端：低延迟、无 GC 停顿、订单零丢失、状态强一致。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="cpp">
+      <h2>第一篇 · 金融场景高性能 C++ 核心知识点</h2>
+
+      <h3>1.1 面向对象与类设计</h3>
+      <h4>1.1.1 虚函数与多态</h4>
+      <ul>
+        <li>带虚函数的类有虚表，对象头部通常有 vptr。</li>
+        <li>基类析构必须 <code>virtual</code>，否则派生对象经基类指针删除会泄漏（持仓/订单对象尤其危险）。</li>
+        <li><strong>重载</strong>：同名不同参数，编译期绑定；<strong>重写</strong>：派生类覆盖 virtual，运行期绑定；<strong>隐藏</strong>：派生类同名函数屏蔽基类同名重载集。</li>
+        <li>交易代码强制 <code>override</code>；固定业务结构体可用 <code>final</code> 禁止继承。</li>
+      </ul>
+
+      <h4>1.1.2 五大法则（交易对象必考）</h4>
+      <ul>
+        <li>五法则：拷贝构造、拷贝赋值、移动构造、移动赋值、析构。</li>
+        <li>Order / Hold 等热对象常 <strong>禁用拷贝</strong>：<code>= delete</code>，只保留移动，避免拷贝带来延迟抖动。</li>
+        <li>移动函数加 <code>noexcept</code>，便于容器优化。</li>
+        <li>连接/文件/内存块用 RAII，避免长驻进程句柄泄漏。</li>
+      </ul>
+
+      <h4>1.1.3 const 系列</h4>
+      <ul>
+        <li><code>const</code> 变量：费率、基础配置等冻结常量。</li>
+        <li><code>const</code> 成员函数：余额/持仓查询只读接口，防止查询路径改状态。</li>
+        <li><code>const int*</code> 内容不可改；<code>int* const</code> 指针地址不可改。</li>
+        <li><code>constexpr</code>：编译期常量，减少运行期取值开销。</li>
+      </ul>
+
+      <h3>1.2 内存管理（全内存柜台重中之重）</h3>
+      <h4>1.2.1 malloc/new 与内存池</h4>
+      <ul>
+        <li>malloc 只分配；new 分配并构造。</li>
+        <li>热路径频繁 malloc/free 易碎片与抖动。</li>
+        <li>柜台方案：启动预分配内存池，划分 Order/Fund/Hold 固定节点；下单取节点、完结归还；可用 placement new：<code>new (ptr) Order()</code>。</li>
+      </ul>
+
+      <h4>1.2.2 智能指针选型</h4>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>原理</th>
+              <th>柜台场景</th>
+              <th>慎用/禁用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>unique_ptr</td>
+              <td>独占，无原子计数</td>
+              <td>订单、会话句柄首选</td>
+              <td>真共享生命周期时不够用</td>
+            </tr>
+            <tr>
+              <td>shared_ptr</td>
+              <td>引用计数有原子开销</td>
+              <td>低频共享状态</td>
+              <td>下单热路径慎用</td>
+            </tr>
+            <tr>
+              <td>weak_ptr</td>
+              <td>破环、观察</td>
+              <td>缓存关联观察</td>
+              <td>核心撮合链路不依赖它做所有权</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>结论：</strong>热路径优先 unique_ptr，避免 shared_ptr 原子操作带来延迟波动。</p>
+
+      <h4>1.2.3 STL 与交易适配</h4>
+      <ul>
+        <li>vector：缓存友好，委托/撮合队列常用；必须 <code>reserve</code> 防扩容拷贝。</li>
+        <li>unordered_map：冲突退化风险；账户映射可考虑自定义开放寻址。</li>
+        <li>map：有序遍历委托编号等。</li>
+        <li>禁止边遍历边删导致迭代器失效。</li>
+      </ul>
+
+      <h4>1.2.4 高性能拔高点</h4>
+      <ul>
+        <li>移动语义 + RVO/NRVO，减少返回对象拷贝。</li>
+        <li>缓存行对齐（常 64B），规避伪共享；多线程独立账户状态隔离到不同缓存行。</li>
+        <li>热路径禁用异常：用错误码，避免不可控跳转延迟。</li>
+      </ul>
+
+      <h3>1.3 C++11 并发</h3>
+      <h4>1.3.1 锁选型</h4>
+      <ul>
+        <li>mutex：临界区含日志 IO/落盘等长耗时。</li>
+        <li>自旋锁：短临界区改资金/持仓，柜台内存状态修改常首选。</li>
+        <li>shared_mutex：高频读、低频写（查余额 vs 冻结资金）。</li>
+      </ul>
+      <h4>1.3.2 atomic 与内存序</h4>
+      <ul>
+        <li>适用：委托计数、成交笔数、序列号等。</li>
+        <li>relaxed：只要原子性，统计可用。</li>
+        <li>acquire/release：常见可见性配对，无锁基础。</li>
+        <li>seq_cst：最严最贵，仅关键标记慎用。</li>
+      </ul>
+      <h4>1.3.3 配套组件</h4>
+      <ul>
+        <li>condition_variable：线程池等待；用 while 防虚假唤醒。</li>
+        <li>thread_local：线程私有日志缓冲/临时对象，减少全局争用。</li>
+        <li>死锁四条件：互斥、占有且等待、不可抢占、环路等待；统一锁顺序规避。</li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="linux">
+      <h2>第二篇 · Linux 系统与网络</h2>
+
+      <h3>2.1 内核与稳定性</h3>
+      <ul>
+        <li>UF3.0 常见：<strong>多线程单进程</strong>；撮合核心单线程串行，网络 IO 多线程接入。</li>
+        <li>mmap：WAL 映射减少 write；共享内存投递网关→内核，延迟常低于 socket。</li>
+        <li>sendfile 等零拷贝：回报发送少一次拷贝。</li>
+        <li>OOM：调 oom_score_adj、拆分进程，避免单进程过大。</li>
+        <li>SIGSEGV/SIGABRT + core；systemd 托管自动拉起；SIGCHLD 回收防僵尸进程。</li>
+      </ul>
+      <h4>排查工具</h4>
+      <ul>
+        <li>gdb：core / 附着排死锁死循环</li>
+        <li>perf：CPU 热点</li>
+        <li>strace：系统调用阻塞（fsync/socket）</li>
+        <li>vmstat/free：内存池是否顶满</li>
+      </ul>
+
+      <h3>2.2 网络 IO</h3>
+      <ul>
+        <li>epoll 替代 select/poll，适配海量连接。</li>
+        <li>LT：有数据就通知；ET：状态变化通知一次，触发后循环读到 EAGAIN。</li>
+        <li>多 Reactor：主线程 accept，子线程 IO，业务线程池解析订单（网关常见）。</li>
+        <li>TCP_NODELAY：关 Nagle，下单包立即发。</li>
+        <li>粘包：长度头 + 业务体；SO_REUSEADDR 快速重启绑定；注意 TIME_WAIT 与端口复用。</li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="arch">
+      <h2>第三篇 · UF3.0 全内存交易架构（最高频）</h2>
+
+      <h3>3.1 核心思想</h3>
+      <p><strong>内存做交易，磁盘做兜底。</strong>账户/资金/持仓/委托/成交等热数据常驻内存；热路径规避磁盘随机 IO；磁盘用 WAL + 快照做持久化、恢复、审计。</p>
+      <ul>
+        <li>收益：微秒级访问，支撑高 TPS。</li>
+        <li>代价：一致性、恢复、容量、对账复杂度更高。</li>
+      </ul>
+      <h4>四层拆解（必背）</h4>
+      <ol>
+        <li>内存数据结构建模</li>
+        <li>状态机与并发控制</li>
+        <li>持久化：WAL + Snapshot</li>
+        <li>故障恢复 + 三方对账</li>
+      </ol>
+
+      <h3>3.2 订单全链路五步（必背）</h3>
+      <ol>
+        <li><strong>接入校验</strong>：网关解析、前置风控，合规单进核心进程。</li>
+        <li><strong>内存处理</strong>：查资金/持仓，冻结，建委托，可撮合则内存撮合，无磁盘随机读写。</li>
+        <li><strong>持久化</strong>：先改内存，再同步/异步写 WAL；强一致用 fsync，极致延迟可异步。</li>
+        <li><strong>崩溃恢复</strong>：加载最近快照 + 重放之后 WAL，重建内存态。</li>
+        <li><strong>对账闭环</strong>：内存态、WAL、交易所回报交叉核对。</li>
+      </ol>
+
+      <h3>3.3 WAL 与 Snapshot</h3>
+      <ul>
+        <li>WAL 准则：状态变更先落日志，再对外成功应答，防丢单。</li>
+        <li>刷盘：高风险业务同步 fsync；普通业务可异步，靠对账兜底。</li>
+        <li>Snapshot：低峰全量固化，缩短恢复时重放窗口。</li>
+      </ul>
+
+      <h3>3.4 经典三问</h3>
+      <h4>为什么快？</h4>
+      <ul>
+        <li>热数据在内存，避开 DB 随机 IO。</li>
+        <li>预分配内存池，热路径少 malloc。</li>
+        <li>撮合单线程减锁竞争；TCP_NODELAY 降网络时延。</li>
+      </ul>
+      <h4>一致性从哪来？</h4>
+      <ul>
+        <li>WAL 留痕 + 快照基线。</li>
+        <li>内存 / 日志 / 交易所回报三方对账。</li>
+        <li>委托状态机约束冻结解冻时序。</li>
+      </ul>
+      <h4>宕机丢单吗？</h4>
+      <ul>
+        <li>成功应答前确保 WAL 已落盘（按业务等级）。</li>
+        <li>恢复：快照 + 重放 WAL。</li>
+        <li>已报交易所的单，恢复后主动查交易所终态补齐。</li>
+      </ul>
+
+      <h3>3.5 风险点（加分）</h3>
+      <ul>
+        <li>内存容量：冷热分离，休眠账户落库。</li>
+        <li>日志损坏：多副本/RAID。</li>
+        <li>并发错乱：同账户短临界区自旋/串行队列。</li>
+        <li>OOM：调优先级、拆进程。</li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="biz">
+      <h2>第四篇 · 证券经纪业务基础</h2>
+
+      <h3>4.1 端到端链路</h3>
+      <p>客户端 → 前置网关 → UF3.0 全内存柜台 → 报盘机 → 交易所 → 成交回报回柜台 → 更新内存资金持仓 → 客户端展示 → 日终中证登清算过户。</p>
+
+      <h3>4.2 委托状态机</h3>
+      <ul>
+        <li>已报：校验通过并冻结，已上报。</li>
+        <li>部成 / 已成：部分或全部成交。</li>
+        <li>已撤：撤销未成交，返还冻结。</li>
+        <li>废单：校验失败，即时释放冻结。</li>
+      </ul>
+      <p>难点：已上报后柜台宕机，恢复后需主动查交易所状态补全。</p>
+
+      <h3>4.3 资金与持仓</h3>
+      <ul>
+        <li>买：下单冻资金，成交扣资金加持仓。</li>
+        <li>卖：下单冻股份，成交减股份加资金。</li>
+        <li>A 股 T+1：区分可卖持仓与当日持仓。</li>
+      </ul>
+
+      <h3>4.4 盘中 vs 日终</h3>
+      <ul>
+        <li>盘中：内存实时委托与冻结解冻；DB 多用于查询归档。</li>
+        <li>日终：批量落库，对接中国结算过户，修正盘中临时记账差异。</li>
+      </ul>
+
+      <h3>4.5 风控常见项</h3>
+      <p>权限、涨跌停、单笔上限、限售拦截、反高频、日内次数限制等。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="qa">
+      <h2>第五篇 · 高频真题话术</h2>
+
+      <h3>技术题</h3>
+      <h4>为何用 C++ 而非 Java/Go？</h4>
+      <p>避免 GC STW；可精细内存池与缓存行优化；无重型运行时；时延更确定。</p>
+      <h4>自旋锁 vs 互斥锁？</h4>
+      <p>短临界区无 IO → 自旋；含 fsync/DB/网络 → 互斥，避免空转。</p>
+      <h4>伪共享？</h4>
+      <p>多线程写同一缓存行不同字段导致缓存行来回失效；结构体按缓存行对齐隔离。</p>
+
+      <h3>业务架构题</h3>
+      <h4>一笔限价买单完整流程？</h4>
+      <ol>
+        <li>网关校验账户与交易时间</li>
+        <li>内核读可用资金，校验金额与涨跌停</li>
+        <li>冻结资金，建委托入队</li>
+        <li>写 WAL（按策略刷盘）后回已报</li>
+        <li>撮合成交：扣冻结、加持仓，推送/对回报</li>
+        <li>异常靠快照+WAL 恢复；日终归档</li>
+      </ol>
+      <h4>异步刷盘断电丢单？</h4>
+      <p>高风险同步 fsync；普通异步 + 交易所回报对账补齐；日志多副本防盘坏。</p>
+
+      <h3>自我介绍模板</h3>
+      <p>深耕 Linux C++ 高性能；熟悉内存池、并发、epoll；了解 UF3.0 全内存、WAL/快照、订单链路与经纪业务约束；能做风控、订单解析、内存状态管理，接受低延迟与零丢失要求。</p>
+
+      <h3>反问参考</h3>
+      <ul>
+        <li>团队偏网关、撮合、报盘还是恢复模块？</li>
+        <li>线上延迟与恢复主要盯哪些指标？</li>
+        <li>新人是否有柜台框架与业务培训？</li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="tips">
+      <h2>文档使用建议</h2>
+      <ol>
+        <li>优先级：全内存三问 → C++ 内存与并发 → epoll → 证券业务。</li>
+        <li>动手：内存池、自旋锁封装、ET epoll 小 demo。</li>
+        <li>业务：不求精通炒股，抓住订单流转、冻结逻辑、架构兜底。</li>
+      </ol>
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./hundsun-uf3-memo.html">去精简背诵版</a>
+        <a class="secondary-button" href="./index.html?company=hundsun&category=%E6%81%92%E7%94%9F%20%2F%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">刷知识直讲题</a>
+        <a class="secondary-button" href="./hundsun.html">返回准备页</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>文档版本 V1.0 · 适配恒生 UF3.0 全内存柜台 C++ 后端面试复习。</p>
+      <p><a href="./hundsun.html">恒生准备页</a> · <a href="./hundsun-uf3-memo.html">精简背诵版</a> · <a href="./index.html">总题库</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>

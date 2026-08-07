@@ -70,6 +70,8 @@ node --test docs/script.test.js
 ```text
 https://kanjiang.github.io/cpp-linux-interview-handbook/
 https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun.html
+https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun-uf3-guide.html
+https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun-uf3-memo.html
 ```
 
 ### 手机现在就要看：同一 Wi‑Fi 本地访问
