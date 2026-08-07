@@ -820,6 +820,71 @@
           "可与数组分配、`.rodata`、智能指针条目对照复习，形成完整内存观。",
           "交易面试常接：为何热路径避免大栈对象、以及 RAII 如何依赖栈生命周期。"
         ]
+      }),
+      q("cpp-knowledge-raii", "intermediate", true, "RAII 到底是什么？交易/后端里该怎么落地？", ["RAII", "析构", "lock_guard", "unique_ptr", "异常安全"], [
+        "RAII（Resource Acquisition Is Initialization）核心：资源获取放构造，资源释放放析构，用对象生命周期绑定资源生命周期。",
+        "依托栈对象：进入作用域自动构造拿资源；函数 return、代码块结束、异常栈展开都会自动析构释放。",
+        "解决的痛点：多分支 return、异常、break 导致手动释放漏写，造成泄漏、死锁、fd 耗尽。",
+        "标准库范例：`lock_guard`/`unique_lock`/`scoped_lock` 管锁；`unique_ptr`/`shared_ptr` 管堆内存；容器内部缓冲也是同类思想。",
+        "落地规范：禁裸 new/裸 fd/裸 lock-unlock 配对；资源类删拷贝、可移动；析构尽量 `noexcept`，释放逻辑不抛异常。"
+      ], {
+        diagramSteps: [
+          "栈上创建 Guard → 构造：new/fopen/lock/接管 fd。",
+          "业务中途 return 或抛异常 → 开始栈展开。",
+          "局部 Guard 依次析构 → delete/fclose/unlock/close。",
+          "对比手写释放：异常直接跳出时，后面的 delete/unlock 永远执行不到。"
+        ],
+        pitfalls: [
+          "`new FileGuard(...)` 却忘 delete：堆上的 RAII 对象失去自动生命周期，违背初衷。",
+          "允许拷贝导致两个对象托管同一 fd/同一块内存，析构二次释放崩溃。",
+          "析构里抛异常，叠加栈展开可能直接 `terminate`。",
+          "把 try-catch 和 RAII 对立：前者处理业务异常，后者兜底资源回收，常一起用。"
+        ],
+        cppCode: [
+          "#include <cstdio>",
+          "#include <mutex>",
+          "#include <memory>",
+          "",
+          "struct OrderBuf {",
+          "    char* buffer;",
+          "    explicit OrderBuf(std::size_t len) : buffer(new char[len]{}) {}",
+          "    ~OrderBuf() { delete[] buffer; buffer = nullptr; }",
+          "    OrderBuf(const OrderBuf&) = delete;",
+          "    OrderBuf& operator=(const OrderBuf&) = delete;",
+          "    OrderBuf(OrderBuf&& other) noexcept : buffer(other.buffer) { other.buffer = nullptr; }",
+          "    OrderBuf& operator=(OrderBuf&& other) noexcept {",
+          "        if (this == &other) return *this;",
+          "        delete[] buffer;",
+          "        buffer = other.buffer;",
+          "        other.buffer = nullptr;",
+          "        return *this;",
+          "    }",
+          "};",
+          "",
+          "class FileGuard {",
+          "    FILE* fp;",
+          "public:",
+          "    explicit FileGuard(const char* path, const char* mode) : fp(fopen(path, mode)) {}",
+          "    ~FileGuard() { if (fp) fclose(fp); }",
+          "    FileGuard(const FileGuard&) = delete;",
+          "    FileGuard& operator=(const FileGuard&) = delete;",
+          "    FILE* get() { return fp; }",
+          "};",
+          "",
+          "std::mutex g_mtx;",
+          "",
+          "void demo() {",
+          "    std::lock_guard<std::mutex> lk(g_mtx);",
+          "    OrderBuf pkt(2048);",
+          "    FileGuard log_fd(\"order.log\", \"a+\");",
+          "    std::unique_ptr<char[]> p(new char[1024]);",
+          "    // return / 异常都会自动解锁、释放缓冲、关文件",
+          "}"
+        ].join("\n"),
+        complexity: [
+          "面试背诵：构造获取、析构释放；栈生命周期兜底所有退出路径；lock_guard/unique_ptr 是标准 RAII。",
+          "恒生向追问：撮合临界区为何 lock_guard、报文缓冲为何 unique_ptr、资源类为何禁拷贝改移动。"
+        ]
       })
     ],
     "面向对象": [

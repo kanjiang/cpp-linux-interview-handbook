@@ -291,6 +291,17 @@ test("questions dataset includes backend high-frequency C++ knowledge pack", () 
   });
 });
 
+test("questions dataset includes RAII knowledge entry", () => {
+  const entry = questions.find((item) => item.id === "cpp-knowledge-raii");
+
+  assert.ok(entry);
+  assert.equal(entry.category, "C++ 知识直讲");
+  assert.ok(entry.diagramSteps.length >= 3);
+  assert.ok(entry.pitfalls.length >= 3);
+  assert.match(entry.cppCode, /lock_guard/);
+  assert.match(entry.answerPoints.join(" "), /栈展开|生命周期/);
+});
+
 test("createPracticeState builds a filtered practice pool", () => {
   const state = createPracticeState(questions, {
     search: "",
