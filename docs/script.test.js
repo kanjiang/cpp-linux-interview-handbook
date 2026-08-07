@@ -230,6 +230,17 @@ test("questions dataset includes move forward, virtual inheritance and std funct
   });
 });
 
+test("questions dataset includes array allocation knowledge entry", () => {
+  const entry = questions.find((item) => item.id === "cpp-knowledge-array-allocation");
+
+  assert.ok(entry);
+  assert.equal(entry.category, "C++ 知识直讲");
+  assert.ok(entry.diagramSteps.length >= 5);
+  assert.ok(entry.pitfalls.length >= 4);
+  assert.match(entry.cppCode, /std::array/);
+  assert.match(entry.answerPoints.join(" "), /栈/);
+});
+
 test("createPracticeState builds a filtered practice pool", () => {
   const state = createPracticeState(questions, {
     search: "",
