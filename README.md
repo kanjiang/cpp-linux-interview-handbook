@@ -35,6 +35,8 @@ cpp-linux-interview-handbook/
 
 - `docs/index.html`
 - `docs/hundsun.html`（恒生面试准备）
+- `docs/cpp-modern-notes.html`（C++ 核心笔记：引用/转发/lambda 等）
+- `docs/hundsun-uf3-guide.html` / `docs/hundsun-uf3-memo.html`（UF3.0 文档）
 
 如果你更习惯本地 HTTP 服务，也可以在仓库根目录执行：
 
@@ -72,6 +74,7 @@ https://kanjiang.github.io/cpp-linux-interview-handbook/
 https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun.html
 https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun-uf3-guide.html
 https://kanjiang.github.io/cpp-linux-interview-handbook/hundsun-uf3-memo.html
+https://kanjiang.github.io/cpp-linux-interview-handbook/cpp-modern-notes.html
 ```
 
 ### 手机现在就要看：同一 Wi‑Fi 本地访问

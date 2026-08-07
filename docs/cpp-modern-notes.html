@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C++ 现代核心笔记 · 引用/转发/lambda/容器</title>
+  <meta name="description" content="整理自面试复习对话：&amp;&amp; 与 &amp;、forward、noexcept、类型推导、引用折叠、emplace、explicit、lambda、std::function、mutable 等。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">C++ Core Notes</p>
+        <h1>现代 C++ 核心知识点笔记</h1>
+        <p>覆盖引用与转发、类型推导、emplace、explicit、lambda、std::function、mutable，以及热路径/闭包/语法糖等概念。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./index.html?category=C%2B%2B%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">刷 C++ 知识直讲题</a>
+          <a class="secondary-button" href="./hundsun.html">恒生准备页</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#ref-and-and">1. <code>&amp;</code> 与 <code>&amp;&amp;</code></a></li>
+        <li><a href="#forward">2. <code>std::forward</code></a></li>
+        <li><a href="#noexcept">3. <code>noexcept</code></a></li>
+        <li><a href="#forwarding-ref">4. 模板 <code>T&amp;&amp;</code> 与万能引用</a></li>
+        <li><a href="#collapse">5. 引用折叠</a></li>
+        <li><a href="#deduction">6. 类型推导</a></li>
+        <li><a href="#deduction-drill">7. <code>T</code> / <code>T&amp;</code> / <code>T&amp;&amp;</code> 对照表</a></li>
+        <li><a href="#prvalue-init">8. <code>f(Order{})</code>：拷贝还是移动？</a></li>
+        <li><a href="#emplace">9. <code>push_back</code> / <code>emplace_back</code></a></li>
+        <li><a href="#pack">10. 可变参数模板里的 <code>...</code></a></li>
+        <li><a href="#reference-alias">11. 返回类型里的 <code>reference</code></a></li>
+        <li><a href="#explicit">12. <code>explicit</code></a></li>
+        <li><a href="#lambda">13. Lambda</a></li>
+        <li><a href="#operator-function">14. <code>operator()</code> 与 <code>std::function</code></a></li>
+        <li><a href="#mutable">15. <code>mutable</code></a></li>
+        <li><a href="#terms">16. 热路径 / 闭包 / 语法糖</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="ref-and-and">
+      <h2>1. <code>&amp;</code> 与 <code>&amp;&amp;</code>（引用）</h2>
+      <p>面试语境下通常指引用，不是按位与/逻辑与。</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th><code>&amp;</code> 左值引用</th>
+              <th><code>&amp;&amp;</code> 右值引用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>绑定</td>
+              <td>有名字、还能继续用的对象</td>
+              <td>临时对象、将亡值（可被掏空）</td>
+            </tr>
+            <tr>
+              <td>例子</td>
+              <td><code>int&amp; r = x;</code></td>
+              <td><code>Order&amp;&amp; o = std::move(order);</code></td>
+            </tr>
+            <tr>
+              <td>目的</td>
+              <td>别名、避免拷贝传参</td>
+              <td>移动语义、完美转发</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>为什么要设计 <code>&amp;&amp;</code>：</strong>C++11 之前临时大对象往往只能拷贝；右值引用允许“资源搬走”而不是深拷贝，支撑移动语义和低延迟场景。运算符语境下 <code>&amp;</code> 是按位与，<code>&amp;&amp;</code> 是逻辑与（短路），与引用不是同一话题。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="forward">
+      <h2>2. <code>std::forward</code></h2>
+      <p><strong>按参数原来的值类别原样转发</strong>：该左值还是左值，该右值还是右值。主要用于转发引用 <code>T&amp;&amp;</code>。</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th><code>std::move</code></th>
+              <th><code>std::forward</code></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>行为</td>
+              <td>无条件转成右值</td>
+              <td>有条件保持原值类别</td>
+            </tr>
+            <tr>
+              <td>用途</td>
+              <td>明确要移动</td>
+              <td>中间层完美转发</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="answer-code-block"><code>template &lt;typename T&gt;
+void wrapper(T&amp;&amp; arg) {
+    sink(std::forward&lt;T&gt;(arg));
+}</code></pre>
+      <p>若写成 <code>sink(arg)</code>：有名字的 <code>arg</code> 永远是左值，右值信息会丢。<code>forward</code> 依赖推导出的 <code>T</code> 把左/右值恢复出来。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="noexcept">
+      <h2>3. <code>noexcept</code></h2>
+      <p>声明函数<strong>不会抛异常</strong>（或在条件下不抛）。若标了 <code>noexcept</code> 却抛出，会 <code>std::terminate</code>。</p>
+      <ul>
+        <li>给编译器/STL 优化承诺：例如 <code>vector</code> 扩容时，移动构造若 <code>noexcept</code> 可放心 move，否则可能退回 copy 以保强异常安全。</li>
+        <li>可用 <code>noexcept(expr)</code>、<code>is_nothrow_move_constructible</code> 做编译期分支。</li>
+        <li>交易对象移动操作常写：<code>Order(Order&amp;&amp;) noexcept;</code></li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="forwarding-ref">
+      <h2>4. 模板 <code>T&amp;&amp;</code>：不是“右值引用绑了左值”</h2>
+      <p><code>Order&amp;&amp;</code>：真正的右值引用，只能接右值/将亡值。</p>
+      <p><code>template&lt;typename T&gt; void g(T&amp;&amp; x)</code>：转发引用（万能引用），左右值都能接——因为传左值时 <code>T</code> 推成 <code>Order&amp;</code>，再经引用折叠变成左值引用。</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>传入</th>
+              <th>推出的 <code>T</code></th>
+              <th>折叠后形参</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>左值 <code>o</code></td>
+              <td><code>Order&amp;</code></td>
+              <td><code>Order&amp;</code></td>
+            </tr>
+            <tr>
+              <td>右值 <code>Order{}</code></td>
+              <td><code>Order</code></td>
+              <td><code>Order&amp;&amp;</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>口诀：只有<strong>正在推导的 <code>T&amp;&amp;</code></strong>（或 <code>auto&amp;&amp;</code>）才是万能引用；写成具体类型 <code>Order&amp;&amp;</code> 就只是右值引用。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="collapse">
+      <h2>5. 引用折叠</h2>
+      <p>引用再套引用时不会出现“引用的引用”，而是折叠成一种引用。</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>组合</th>
+              <th>结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>&amp; + &amp;</code></td><td><code>&amp;</code></td></tr>
+            <tr><td><code>&amp; + &amp;&amp;</code></td><td><code>&amp;</code></td></tr>
+            <tr><td><code>&amp;&amp; + &amp;</code></td><td><code>&amp;</code></td></tr>
+            <tr><td><code>&amp;&amp; + &amp;&amp;</code></td><td><code>&amp;&amp;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>口诀：有左值引用参与 → 结果是 <code>&amp;</code>；两个都是右值引用 → 才是 <code>&amp;&amp;</code>。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="deduction">
+      <h2>6. 类型推导入门</h2>
+      <p>类型推导 = 不写死类型，编译器根据初始化式/实参推出类型。常见：<code>auto</code>、模板参数推导、<code>decltype</code>。</p>
+      <ul>
+        <li><code>auto x = o;</code> 通常是值类型；要引用写 <code>auto&amp;</code> / <code>const auto&amp;</code> / <code>auto&amp;&amp;</code>。</li>
+        <li>模板 <code>void f(T x)</code>：按实参推出 <code>T</code> 再实例化。</li>
+        <li><code>decltype(expr)</code> 更贴近表达式的类型与引用属性。</li>
+      </ul>
+      <p>流程：看实参 → 推出 <code>T</code> → 若涉及 <code>T&amp;&amp;</code> 再引用折叠 → 得到最终类型。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="deduction-drill">
+      <h2>7. 三种形参对照（<code>Order</code>）</h2>
+      <h3>按值 <code>void f(T x)</code></h3>
+      <ul>
+        <li><code>f(o)</code> / <code>f(Order{})</code>：<code>T = Order</code>，按值初始化（拷贝或移动，或 C++17 省略）。</li>
+      </ul>
+      <h3>左值引用 <code>void g(T&amp; x)</code></h3>
+      <ul>
+        <li>接左值；右值 <code>g(Order{})</code> 通常不行。</li>
+      </ul>
+      <h3>转发引用 <code>void k(T&amp;&amp; x)</code></h3>
+      <ul>
+        <li><code>k(o)</code> → <code>T = Order&amp;</code></li>
+        <li><code>k(std::move(o))</code> / <code>k(Order{})</code> → <code>T = Order</code></li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="prvalue-init">
+      <h2>8. <code>f(Order{})</code> 是拷贝进 <code>x</code> 吗？</h2>
+      <p>对 <code>template&lt;class T&gt; void f(T x); f(Order{});</code>：</p>
+      <ol>
+        <li><code>T = Order</code></li>
+        <li>用右值初始化参数 <code>x</code>：有移动构造则<strong>优先移动</strong>，不是“只能拷贝”</li>
+        <li>C++17 起，纯右值初始化同类型对象常常<strong>直接构造到 <code>x</code></strong>，拷贝/移动都可省略</li>
+      </ol>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="emplace">
+      <h2>9. <code>push_back</code> 与 <code>emplace_back</code></h2>
+      <ul>
+        <li><code>push_back(x)</code>：先有一个 <code>T</code>，再拷贝/移动进容器。</li>
+        <li><code>emplace_back(a,b)</code>：把构造参数完美转发，在容器内存里<strong>原地构造</strong>。</li>
+      </ul>
+      <pre class="answer-code-block"><code>v.push_back(Order{42});   // 语义上：先有对象，再放入
+v.emplace_back(42);       // 在 vector 尾部直接 Order(42)</code></pre>
+      <p>已有对象：<code>push_back(std::move(o))</code>；从原材料现场造：<code>emplace_back(...)</code>。注意 <code>initializer_list</code> 与 <code>explicit</code> 构造时两者行为可能不同。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="pack">
+      <h2>10. <code>emplace_back</code> 里的 <code>...</code></h2>
+      <pre class="answer-code-block"><code>template &lt;class... Args&gt;
+reference emplace_back(Args&amp;&amp;... args) {
+    ::new (ptr) T(std::forward&lt;Args&gt;(args)...);
+}</code></pre>
+      <ul>
+        <li><code>class... Args</code>：类型包（任意个类型）</li>
+        <li><code>Args&amp;&amp;... args</code>：参数包（转发引用）</li>
+        <li><code>forward&lt;Args&gt;(args)...</code>：包展开，变成 <code>fwd(a), fwd(b), ...</code></li>
+        <li><code>::new (ptr) T(...)</code>：placement new，在已有地址上构造</li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="reference-alias">
+      <h2>11. 返回类型 <code>reference</code> 是什么</h2>
+      <p>不是新关键字，是容器的类型别名，对 <code>vector&lt;T&gt;</code> 通常：</p>
+      <pre class="answer-code-block"><code>using reference = T&amp;;</code></pre>
+      <p>所以 <code>reference emplace_back(...)</code> ≈ 返回新插入元素的 <code>T&amp;</code>（C++17 起 <code>vector::emplace_back</code> 返回引用）。</p>
+      <p><code>Order o2(42);</code> = 定义 <code>Order</code> 对象 <code>o2</code>，直接初始化，调用匹配的构造函数（如 <code>Order(int)</code>）。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="explicit">
+      <h2>12. <code>explicit</code></h2>
+      <p>禁止用该构造函数（或转换函数）做<strong>隐式转换</strong>，只能显式构造/转换。</p>
+      <pre class="answer-code-block"><code>struct Order {
+    explicit Order(int id);
+};
+// process(42);     // 错
+process(Order{42}); // 对
+v.emplace_back(42); // 对：直接构造，不依赖隐式转换
+// v.push_back(42); // 常失败</code></pre>
+      <p>单参数构造函数默认建议加 <code>explicit</code>，避免 <code>int</code> 莫名其妙变成 <code>Order</code>。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="lambda">
+      <h2>13. Lambda 表达式</h2>
+      <p>匿名函数对象（闭包）。基本形：<code>[capture](params) -&gt; ret { body }</code>。</p>
+      <h3>捕获</h3>
+      <ul>
+        <li><code>[=]</code> 按值 / <code>[&amp;]</code> 按引用 / <code>[x]</code> / <code>[&amp;x]</code> / <code>[=, &amp;x]</code></li>
+        <li><code>[this]</code> / C++17 <code>[*this]</code></li>
+        <li>按值捕获默认在 const 的 <code>operator()</code> 里，改副本要 <code>mutable</code></li>
+      </ul>
+      <h3>为什么 <code>[x](){ ++x; }</code> 错？</h3>
+      <p>捕获成功了，但默认 <code>operator()</code> 是 const，不能改按值捕获的副本。应：</p>
+      <pre class="answer-code-block"><code>auto f = [x]() mutable { return ++x; }; // 改副本
+auto g = [&amp;x]() { return ++x; };        // 改外面的 x</code></pre>
+      <h3>坑</h3>
+      <ul>
+        <li>异步回调里 <code>[&amp;局部变量]</code> → 悬空</li>
+        <li><code>[this]</code> 对象先析构 → 悬空</li>
+        <li>热路径慎用大 <code>std::function</code> 包一层</li>
+      </ul>
+      <p><code>std::function&lt;int(int,int)&gt;</code> = 返回 <code>int</code>、两个 <code>int</code> 参数的可调用包装。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="operator-function">
+      <h2>14. <code>operator()</code> 与 <code>std::function</code></h2>
+      <h3><code>operator()</code></h3>
+      <p>函数调用运算符重载：让对象写成 <code>obj(args)</code>。带 <code>operator()</code> 的类叫函数对象。Lambda 本质就是编译器生成的这种类。</p>
+      <h3><code>std::function</code></h3>
+      <p>可调用包装器：用统一类型存函数指针 / functor / lambda（签名匹配即可）。</p>
+      <ul>
+        <li>好处：可做成员、可进容器、可运行期替换</li>
+        <li>代价：类型擦除、可能堆分配、难内联 → 热路径慎用</li>
+        <li>空的 <code>function</code> 调用会抛 <code>bad_function_call</code>，先 <code>if (f)</code></li>
+      </ul>
+      <p>调用链：<code>f(1,2)</code> → <code>function::operator()</code> → 真正目标的 <code>operator()</code> 或函数指针。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="mutable">
+      <h2>15. <code>mutable</code></h2>
+      <ul>
+        <li><strong>成员</strong>：允许在 <code>const</code> 成员函数里修改该字段（计数、缓存、mutex）。</li>
+        <li><strong>lambda</strong>：让 <code>operator()</code> 非 const，从而能改按值捕获的副本。</li>
+      </ul>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="terms">
+      <h2>16. 热路径 / 闭包 / 语法糖</h2>
+      <ul>
+        <li><strong>热路径</strong>：跑得最勤、延迟最敏感的代码段（如下单主链路）。</li>
+        <li><strong>闭包</strong>：可调用逻辑 + 捕获走的状态打包在一起；C++ 里常是带成员的函数对象。</li>
+        <li><strong>语法糖</strong>：不增加本质能力、只让写法更短的语法。Lambda 是写闭包的语法糖，手写带 <code>operator()</code> 的类也能做到类似效果。</li>
+      </ul>
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./index.html?category=C%2B%2B%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">去刷 C++ 知识直讲</a>
+        <a class="secondary-button" href="./hundsun-uf3-guide.html">UF3.0 完整文档</a>
+        <a class="secondary-button" href="./index.html">总题库</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记，可与题库「C++ 知识直讲」「恒生 / 知识直讲」配合使用。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./hundsun-uf3-memo.html">UF3 背诵版</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>
