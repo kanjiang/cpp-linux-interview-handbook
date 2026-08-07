@@ -428,6 +428,8 @@
           "忽略 `constinit`：它不负责“只读”，而负责“静态初始化时机”。"
         ],
         cppCode: [
+          "#include <cstddef>",
+          "",
           "consteval int pow2(int x) {",
           "    return x * x;",
           "}",
