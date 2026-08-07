@@ -509,6 +509,317 @@
           "面试背诵抓五点：阶段、类型、作用域、副作用、实体；业务数值常量弃宏改 `constexpr`。",
           "可继续追问：`consteval` 与 `constexpr` 函数差异，以及为何交易协议定长/端口更适合编译期常量。"
         ]
+      }),
+      q("cpp-knowledge-explicit", "intermediate", true, "`explicit` 关键字到底防的是什么？资源类为什么几乎都要加？", ["explicit", "隐式转换", "单参构造", "RAII"], [
+        "`explicit` 用来禁止构造函数参与隐式类型转换，只允许显式构造调用。",
+        "单参构造最容易踩坑：`open(\"./log.txt\")` 可能被编译器隐式构造成 `FileGuard` 临时对象，带来意外资源创建/销毁。",
+        "加上 `explicit` 后，必须写成 `open(FileGuard(\"./log.txt\"))`，意图清晰，避免“字符串自动变对象”。",
+        "C++11 起，列表初始化触发的转换也会受 `explicit` 约束，不只是旧式拷贝初始化。",
+        "交易/后端规范：文件句柄、socket、缓冲区、智能指针相关单参构造，默认都加 `explicit`。"
+      ], {
+        diagramSteps: [
+          "先写无 explicit 的 `FileGuard(const char*)`，再写 `void open(FileGuard)`。",
+          "调用 `open(\"./log.txt\")` 时，编译器自动走单参构造，生成临时 FileGuard。",
+          "加 `explicit` 后，这条隐式路径被关掉，必须显式构造。",
+          "业务含义：防止无意临时对象占用 fd/内存，又在表达式结束时立刻析构。"
+        ],
+        pitfalls: [
+          "只给拷贝构造加 explicit，却忘了真正危险的单参转换构造。",
+          "以为多参数构造永远不会隐式转换；列表初始化场景仍可能触发。",
+          "为了“写起来短”去掉 explicit，结果接口出现隐蔽临时对象。"
+        ],
+        cppCode: [
+          "struct FileGuard {",
+          "    explicit FileGuard(const char* path) {}",
+          "};",
+          "",
+          "void open(FileGuard fd) {}",
+          "",
+          "void demo() {",
+          "    // open(\"./log.txt\");              // 有 explicit：编译失败",
+          "    open(FileGuard(\"./log.txt\"));     // 显式构造：OK",
+          "}"
+        ].join("\n"),
+        complexity: [
+          "面试一句话：`explicit` 禁单参构造隐式转换，防无意临时对象和资源误创建。",
+          "可接 RAII 句柄类、`unique_ptr` 构造为何也是 explicit。"
+        ]
+      }),
+      q("cpp-knowledge-delete-copy", "intermediate", true, "`FileGuard(const FileGuard&) = delete` 每一段是什么意思？为何资源类要删拷贝？", ["=delete", "拷贝构造", "Rule of Five", "句柄"], [
+        "完整语句 `FileGuard(const FileGuard&) = delete;` 表示：拷贝构造被显式删除，调用即编译失败。",
+        "`const FileGuard&` 是源对象常引用，保证“如果允许拷贝”也不会改原对象；这里配合 `=delete` 直接禁止拷贝。",
+        "`=delete` 是 C++11 语法：编译器不再生成可用版本；`=default` 则相反，请求编译器生成默认实现。",
+        "资源类持有 `FILE*`/`fd` 时若允许拷贝，两个对象析构都会 close，造成二次关闭崩溃。",
+        "实务上通常成对删除拷贝构造和拷贝赋值，需要转移时再写 move。"
+      ], {
+        diagramSteps: [
+          "假设 FileGuard 内有 FILE*，拷贝后两个对象指向同一句柄。",
+          "第一个析构 fclose，第二个再 fclose → 未定义行为/崩溃。",
+          "写成 `= delete` 后，任何拷贝在编译期被拦住。",
+          "若业务要传递所有权，改走移动构造，并把源对象句柄置空。"
+        ],
+        pitfalls: [
+          "只删拷贝构造，不删拷贝赋值，赋值路径仍可能复制句柄。",
+          "删了拷贝却忘了提供/默认移动，导致对象根本无法从函数返回。",
+          "把 `=delete` 和 `=default` 说反：一个是禁用，一个是生成默认版。"
+        ],
+        cppCode: [
+          "struct FileGuard {",
+          "    FileGuard(const FileGuard&) = delete;",
+          "    FileGuard& operator=(const FileGuard&) = delete;",
+          "    FileGuard(FileGuard&&) noexcept = default;",
+          "    FileGuard& operator=(FileGuard&&) noexcept = default;",
+          "};"
+        ].join("\n")
+      }),
+      q("cpp-knowledge-mutex", "intermediate", true, "`std::mutex` 底层是什么？lock/try_lock/unlock 该怎么理解？", ["mutex", "pthread_mutex", "锁", "死锁"], [
+        "Linux 上 `std::mutex` 通常封装 `pthread_mutex_t`，属于操作系统提供的互斥原语。",
+        "`lock()` 获取锁，已被占用则阻塞；`try_lock()` 非阻塞，失败立即返回 false；`unlock()` 释放锁。",
+        "默认 mutex 不可递归：同一线程重复 `lock` 可能死锁；需要可重入再用 `recursive_mutex`。",
+        "mutex 禁止拷贝（`=delete`），锁对象本身定义在哪（栈/全局/成员）内存就在哪，等待队列由内核维护。",
+        "面试别只背接口：要能说清“互斥保护的是不变量”，以及为何要用 RAII 锁封装避免漏解锁。"
+      ], {
+        diagramSteps: [
+          "线程 A lock 成功，进入临界区。",
+          "线程 B lock 时发现锁被占，进入内核等待队列并让出 CPU。",
+          "A unlock 后，内核唤醒等待者，B 再获得锁。",
+          "若 A 再次 lock 同一把非递归锁，可能自我死锁。"
+        ],
+        pitfalls: [
+          "在持锁时做耗时 IO，把锁变成全局性能瓶颈。",
+          "忘记 unlock 或异常路径漏解锁；应用 `lock_guard`/`unique_lock`。",
+          "多锁不加固定顺序，造成 ABBA 死锁。"
+        ],
+        cppCode: [
+          "#include <mutex>",
+          "",
+          "std::mutex g_mtx;",
+          "",
+          "void critical() {",
+          "    g_mtx.lock();",
+          "    // ... 修改共享状态 ...",
+          "    g_mtx.unlock();",
+          "}"
+        ].join("\n")
+      }),
+      q("cpp-knowledge-smart-ptr-backend", "intermediate", true, "后端/交易场景里 unique_ptr、shared_ptr、weak_ptr 该怎么完整对比？", ["unique_ptr", "shared_ptr", "weak_ptr", "RAII", "引用计数"], [
+        "三者都是 RAII：用对象生命周期管理堆资源，避免手工 delete 漏释。",
+        "`unique_ptr`：独占所有权，禁拷贝只 move；通常只多一个指针大小，无原子计数，低延迟首选。",
+        "`shared_ptr`：共享所有权，另有控制块（强/弱引用计数、删除器）；拷贝会改计数，有原子开销，也可能循环引用。",
+        "`weak_ptr`：不增加强引用，只观察；`lock()` 提升为 `shared_ptr`，用于打破环、缓存观察。",
+        "选型：订单缓冲/独占 fd 用 unique；多处共享生命周期才 shared；破环用 weak。"
+      ], {
+        diagramSteps: [
+          "unique：一把钥匙一个人拿，move 后原指针为空。",
+          "shared：业务对象 + 控制块两坨堆内存，拷贝只增加计数。",
+          "两个 Node 互相 shared_ptr 指对方 → 计数永不为 0 → 泄漏。",
+          "把一边改成 weak_ptr → 不再托住对方 → 可正常释放。"
+        ],
+        pitfalls: [
+          "默认滥用 shared_ptr，热路径被原子计数拖慢。",
+          "循环引用只用 shared，不用 weak。",
+          "从 shared 取裸指针长期保存，绕过生命周期管理。"
+        ],
+        cppCode: [
+          "#include <memory>",
+          "#include <cstdio>",
+          "",
+          "void demo() {",
+          "    std::unique_ptr<char[]> buf(new char[2048]);",
+          "    auto buf2 = std::move(buf); // buf 置空",
+          "",
+          "    std::unique_ptr<FILE, decltype(&fclose)> fp(fopen(\"log.txt\", \"a\"), &fclose);",
+          "",
+          "    auto p1 = std::make_shared<int>(1);",
+          "    std::shared_ptr<int> p2 = p1; // use_count == 2",
+          "    std::weak_ptr<int> w = p1;",
+          "    if (auto locked = w.lock()) {",
+          "        // 资源仍在",
+          "    }",
+          "}"
+        ].join("\n")
+      }),
+      q("cpp-knowledge-lock-wrappers", "intermediate", true, "`lock_guard` / `unique_lock` / `scoped_lock` 怎么选？", ["lock_guard", "unique_lock", "scoped_lock", "RAII", "条件变量"], [
+        "`lock_guard`：最简 RAII，构造 lock、析构 unlock；不能中途解锁、不能 defer，开销最小。",
+        "`unique_lock`：可 defer_lock、手动 lock/unlock、try_lock、move；条件变量 `wait` 标配它。",
+        "`scoped_lock`(C++17)：一次锁多把 mutex，按内部策略避免多锁顺序死锁。",
+        "选型：简单临界区用 lock_guard；要中途解锁/配合 cv 用 unique_lock；同时拿多锁用 scoped_lock。",
+        "共同价值：把解锁绑到作用域结束，避免 return/异常路径漏解锁。"
+      ], {
+        diagramSteps: [
+          "lock_guard：进作用域上锁，出作用域自动解锁。",
+          "unique_lock + condition_variable：wait 时原子释放锁并休眠，被唤醒后重新获锁。",
+          "scoped_lock(m1,m2)：一次性管理两把锁，降低 ABBA 死锁概率。"
+        ],
+        pitfalls: [
+          "拿 lock_guard 去配 condition_variable::wait（接口要求 unique_lock）。",
+          "持 unique_lock 时间过长，把灵活变成负优化。",
+          "多锁手写 lock 顺序不一致，却没用 scoped_lock 或统一顺序。"
+        ],
+        cppCode: [
+          "#include <mutex>",
+          "#include <condition_variable>",
+          "",
+          "std::mutex m1, m2;",
+          "std::condition_variable cv;",
+          "bool ready = false;",
+          "",
+          "void simple() {",
+          "    std::lock_guard<std::mutex> lk(m1);",
+          "}",
+          "",
+          "void wait_ready() {",
+          "    std::unique_lock<std::mutex> lk(m1);",
+          "    cv.wait(lk, [] { return ready; });",
+          "}",
+          "",
+          "void both() {",
+          "    std::scoped_lock lk(m1, m2);",
+          "}"
+        ].join("\n")
+      }),
+      q("cpp-knowledge-socket-guard", "intermediate", true, "如何用 RAII 封装 SocketGuard，避免 fd 泄漏？", ["SocketGuard", "RAII", "socket", "移动语义", "explicit"], [
+        "SocketGuard 把 socket fd 绑到对象生命周期：构造接管，析构 `close`。",
+        "单参构造加 `explicit`，禁止 `int` 隐式变 Guard。",
+        "删除拷贝，避免双对象 close 同一 fd；提供 move，转移后源 fd 置 -1。",
+        "任意 return/异常退出都会跑析构，降低 fd 耗尽风险。",
+        "这是网络服务和交易网关里最常见的句柄管理模板。"
+      ], {
+        diagramSteps: [
+          "accept/socket 得到 fd → 交给 SocketGuard。",
+          "业务读写过程中提前 return。",
+          "栈展开触发析构 → close(fd)。",
+          "若 move 给另一对象，源对象不再负责关闭。"
+        ],
+        pitfalls: [
+          "允许拷贝导致双重 close。",
+          "move 后忘记把 other.fd 置无效，两边都 close。",
+          "析构里 close 失败不处理日志，排障困难。"
+        ],
+        cppCode: [
+          "#include <unistd.h>",
+          "",
+          "struct SocketGuard {",
+          "    int fd{-1};",
+          "    explicit SocketGuard(int sock_fd) : fd(sock_fd) {}",
+          "    ~SocketGuard() {",
+          "        if (fd >= 0) close(fd);",
+          "        fd = -1;",
+          "    }",
+          "    SocketGuard(const SocketGuard&) = delete;",
+          "    SocketGuard& operator=(const SocketGuard&) = delete;",
+          "    SocketGuard(SocketGuard&& other) noexcept : fd(other.fd) { other.fd = -1; }",
+          "    SocketGuard& operator=(SocketGuard&& other) noexcept {",
+          "        if (this == &other) return *this;",
+          "        if (fd >= 0) close(fd);",
+          "        fd = other.fd;",
+          "        other.fd = -1;",
+          "        return *this;",
+          "    }",
+          "    int getfd() const { return fd; }",
+          "};"
+        ].join("\n")
+      }),
+      q("cpp-knowledge-string-vector-memory", "intermediate", true, "`std::string` 和 `std::vector` 的缓冲区是怎么管理的？SSO 是什么？", ["string", "vector", "SSO", "capacity", "扩容"], [
+        "`string` 常有 SSO：短串（常见 ≤15）放对象内部缓冲，不走堆；长串才在堆上分配。",
+        "长串/`vector` 都靠堆缓冲：size 是有效长度，capacity 是已分配容量，冗余容量减少频繁扩容。",
+        "`vector` 典型三指针/三量：begin、size、capacity；满了通常按 1.5/2 倍扩容并迁移元素。",
+        "`reserve` 预分配容量不构造元素；`resize` 改大小；`clear` 常不归还 capacity；`shrink_to_fit` 才请求回收。",
+        "移动通常只转指针/元数据，避免深拷贝；热路径先 reserve，再批量写入。"
+      ], {
+        diagramSteps: [
+          "短 string：字符躺在对象自身（栈/全局对象内部）。",
+          "长 string/vector：对象里存指针，真实字符/元素在堆。",
+          "push 到 capacity 满 → 分配更大堆区 → 迁移 → 释放旧区。",
+          "先 reserve(N) 可把多次扩容变成一次分配。"
+        ],
+        pitfalls: [
+          "循环 push_back 不 reserve，反复扩容拷贝。",
+          "把 clear 当成释放堆内存。",
+          "保存 vector 元素指针/迭代器后触发扩容，指针失效。"
+        ],
+        cppCode: [
+          "#include <string>",
+          "#include <vector>",
+          "",
+          "void demo() {",
+          "    std::string short_s = \"hello\";      // 可能走 SSO",
+          "    std::string long_s(64, 'x');         // 通常在堆",
+          "    std::vector<int> v;",
+          "    v.reserve(1024);",
+          "    for (int i = 0; i < 1000; ++i) v.push_back(i);",
+          "}"
+        ].join("\n")
+      }),
+      q("cpp-knowledge-emplace-vs-push", "intermediate", true, "`emplace_back` 和 `push_back` 底层差别是什么？交易代码为何偏爱 emplace？", ["emplace_back", "push_back", "原地构造", "临时对象"], [
+        "`push_back(Order(...))` 往往先造临时对象，再拷贝/移动进容器。",
+        "`emplace_back(args...)` 把参数转发到容器内存里原地构造，少临时对象。",
+        "`emplace` 是在指定位置原地构造；`emplace_back` 在尾部原地构造。",
+        "已有现成对象时，`push_back(std::move(obj))` 也很清晰；不要为了“看起来高级”无脑替换。",
+        "自定义订单/报文结构体批量入队时，优先 emplace_back 减少热路径开销。"
+      ], {
+        diagramSteps: [
+          "push_back：栈上临时 Order → move/copy 进 vector 堆缓冲。",
+          "emplace_back：直接在 vector 堆缓冲调用 Order 构造函数。",
+          "少一次临时对象，就少一次构造/析构噪声。"
+        ],
+        pitfalls: [
+          "对已经构造好的对象强行 emplace_back，可读性未必更好。",
+          "emplace 参数列表写错，编译错误难读，不如先把对象造清楚。",
+          "忽略扩容：无论 push/emplace，capacity 不够仍会搬迁。"
+        ],
+        cppCode: [
+          "#include <vector>",
+          "",
+          "struct Order {",
+          "    int id;",
+          "    double px;",
+          "    int qty;",
+          "    Order(int i, double p, int q) : id(i), px(p), qty(q) {}",
+          "};",
+          "",
+          "void demo() {",
+          "    std::vector<Order> vec;",
+          "    vec.reserve(128);",
+          "    vec.push_back(Order(1001, 12.5, 100));     // 临时对象 + 移入",
+          "    vec.emplace_back(1002, 13.0, 200);         // 原地构造",
+          "}"
+        ].join("\n")
+      }),
+      q("cpp-knowledge-process-memory-layout", "intermediate", true, "Linux 进程里栈、堆、`.data`/`.bss`/`.rodata`/`.text` 分别放什么？", ["栈", "堆", ".data", ".bss", ".rodata", ".text", "内存布局"], [
+        "栈：局部变量、形参、返回地址等，函数进出自动分配释放；Linux 默认常约 8MB，过大局部数组易溢出。",
+        "堆：`new/malloc`、容器长缓冲、shared_ptr 控制块等，手动或 RAII 释放，底层常走 brk/mmap。",
+        "`.data`：已初始化全局/静态变量；`.bss`：未初始化全局/静态，加载时清零。",
+        "`.rodata`：字符串字面量、全局常量等只读数据；`.text`：机器指令。",
+        "举例：`const char* str=\"hello\"` 中字面量在 `.rodata`，指针变量本身按它的存储期落在全局或栈。"
+      ], {
+        diagramSteps: [
+          "从上到下建立心智图：高地址栈向下长，堆向上长，中间是映射区。",
+          "全局 int 未初始化 → `.bss`；全局 int=1 → `.data`。",
+          "函数内 int a；`new int` → a 在栈，对象在堆。",
+          "\"hello\" → `.rodata`；函数代码 → `.text`。"
+        ],
+        pitfalls: [
+          "把局部 const 一律说成 `.rodata`。",
+          "混淆指针所在区段和所指对象区段。",
+          "在栈上开超大缓冲导致溢出，却怪“堆内存不够”。"
+        ],
+        cppCode: [
+          "const char* g_str = \"hello\"; // 字面量 .rodata；g_str 在全局区",
+          "int g_zero;                   // .bss",
+          "int g_one = 1;                // .data",
+          "",
+          "void func() {",
+          "    int a;                    // 栈",
+          "    int* p = new int(2);      // p 在栈，*p 在堆",
+          "    static int b;             // .bss/.data",
+          "    delete p;",
+          "}"
+        ].join("\n"),
+        complexity: [
+          "可与数组分配、`.rodata`、智能指针条目对照复习，形成完整内存观。",
+          "交易面试常接：为何热路径避免大栈对象、以及 RAII 如何依赖栈生命周期。"
+        ]
       })
     ],
     "面向对象": [

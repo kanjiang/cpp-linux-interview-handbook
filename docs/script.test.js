@@ -268,6 +268,29 @@ test("questions dataset includes constexpr vs define knowledge entry", () => {
   assert.match(entry.answerPoints.join(" "), /预处理/);
 });
 
+test("questions dataset includes backend high-frequency C++ knowledge pack", () => {
+  const ids = [
+    "cpp-knowledge-explicit",
+    "cpp-knowledge-delete-copy",
+    "cpp-knowledge-mutex",
+    "cpp-knowledge-smart-ptr-backend",
+    "cpp-knowledge-lock-wrappers",
+    "cpp-knowledge-socket-guard",
+    "cpp-knowledge-string-vector-memory",
+    "cpp-knowledge-emplace-vs-push",
+    "cpp-knowledge-process-memory-layout"
+  ];
+
+  ids.forEach((id) => {
+    const entry = questions.find((item) => item.id === id);
+    assert.ok(entry, id);
+    assert.equal(entry.category, "C++ 知识直讲");
+    assert.ok(entry.answerPoints.length >= 4);
+    assert.ok((entry.diagramSteps || []).length >= 3);
+    assert.ok((entry.pitfalls || []).length >= 2);
+  });
+});
+
 test("createPracticeState builds a filtered practice pool", () => {
   const state = createPracticeState(questions, {
     search: "",
