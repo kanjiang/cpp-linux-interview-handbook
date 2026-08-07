@@ -885,6 +885,69 @@
           "面试背诵：构造获取、析构释放；栈生命周期兜底所有退出路径；lock_guard/unique_ptr 是标准 RAII。",
           "恒生向追问：撮合临界区为何 lock_guard、报文缓冲为何 unique_ptr、资源类为何禁拷贝改移动。"
         ]
+      }),
+      q("cpp-knowledge-noexcept", "advanced", true, "`noexcept` 到底优化什么？为何移动构造几乎必须加？", ["noexcept", "移动构造", "vector 扩容", "异常安全", "terminate"], [
+        "`noexcept` 声明函数不会抛异常；编译器可少生成异常展开相关代码，指令更干净，适合低延迟路径。",
+        "最关键场景：移动构造/移动赋值加 `noexcept`。`vector` 扩容时，只有 nothrow 移动才敢用移动，否则为异常安全会降级成拷贝。",
+        "析构默认隐式 `noexcept(true)`；析构里抛异常通常直接 `terminate`，资源释放必须稳健。",
+        "虚函数重写的 noexcept 属性必须兼容基类：基类已 noexcept，派生不能放宽成可抛。",
+        "声明了 noexcept 却仍 throw：不会按普通异常捕获路径走，直接 `std::terminate`。",
+        "规范：指针转移/swap/纯计算可 noexcept；内部有 `new`/可能失败的 IO 不要随便标；可用 `noexcept(expr)` 与 `is_nothrow_move_constructible` 做编译期判定。"
+      ], {
+        diagramSteps: [
+          "vector 扩容：申请新缓冲后要迁移旧元素。",
+          "若移动构造 noexcept：逐个 move，只转指针/句柄，快。",
+          "若移动构造可抛：STL 为保原容器可回滚，改走拷贝，出现大块拷贝与尾延迟。",
+          "自定义资源类手写移动时，成员都能 nothrow 转移，就显式写 `noexcept`。",
+          "检测：`std::is_nothrow_move_constructible_v<T>` / `noexcept(T(std::move(x)))`。"
+        ],
+        pitfalls: [
+          "移动函数标了 noexcept，内部却调用会抛的接口，一旦抛出直接 terminate。",
+          "基类虚函数 noexcept，子类 override 漏写导致编译失败或语义不兼容。",
+          "构造/业务函数里有 new，却强行 noexcept，`bad_alloc` 变成进程退出。",
+          "以为编译器默认合成移动一定 noexcept；成员不满足时合成结果可能不是 nothrow。"
+        ],
+        cppCode: [
+          "#include <type_traits>",
+          "#include <utility>",
+          "#include <vector>",
+          "",
+          "struct Order {",
+          "    char* buf;",
+          "    Order() : buf(new char[2048]) {}",
+          "    ~Order() { delete[] buf; }",
+          "    Order(const Order&) = delete;",
+          "    Order& operator=(const Order&) = delete;",
+          "    Order(Order&& other) noexcept : buf(other.buf) { other.buf = nullptr; }",
+          "    Order& operator=(Order&& other) noexcept {",
+          "        if (this == &other) return *this;",
+          "        delete[] buf;",
+          "        buf = other.buf;",
+          "        other.buf = nullptr;",
+          "        return *this;",
+          "    }",
+          "};",
+          "",
+          "void check_price_limit(Order& /*ord*/) noexcept {",
+          "    // 纯字段判断，无分配、无抛点",
+          "}",
+          "",
+          "template <typename F>",
+          "void wrapper(F&& f) noexcept(noexcept(f())) {",
+          "    f();",
+          "}",
+          "",
+          "void demo() {",
+          "    static_assert(std::is_nothrow_move_constructible_v<Order>);",
+          "    std::vector<Order> vec;",
+          "    vec.emplace_back();",
+          "    vec.emplace_back(); // 扩容时走 noexcept 移动",
+          "}"
+        ].join("\n"),
+        complexity: [
+          "面试背诵：noexcept 承诺不抛；移动加它是为了容器扩容走移动而非拷贝；析构默认 noexcept；标了再抛就 terminate。",
+          "恒生向追问：Order 进 vector 为何必须 nothrow move，以及风控纯计算接口为何适合 noexcept。"
+        ]
       })
     ],
     "面向对象": [
