@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C++ 容器与智能指针形象笔记 · vector/string/unique_ptr/shared_ptr</title>
+  <meta name="description" content="用储物柜、钥匙、合租房比喻讲清 std::vector 的扩容与迭代器失效、std::string 的 SSO、unique_ptr 的零开销独占、shared_ptr 的引用计数与三大坑。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">C++ Containers &amp; Smart Pointers</p>
+        <h1>容器与智能指针 · 形象笔记</h1>
+        <p>四个最常用的「资源管家」：<code>vector</code> 是会自动扩建的储物柜，<code>string</code> 是自带小口袋的储物柜，<code>unique_ptr</code> 是唯一的一把钥匙，<code>shared_ptr</code> 是合租房加门口的计数牌。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./cpp-concurrency-notes.html">并发与线程</a>
+          <a class="secondary-button" href="./cpp-value-semantics.html">拷贝与移动</a>
+          <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>
+          <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
+          <a class="secondary-button" href="./hundsun.html">恒生准备页</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#overview">0. 总览：它们是同一类东西</a></li>
+        <li><a href="#vector">1. <code>std::vector</code> · 会自动扩建的储物柜</a></li>
+        <li><a href="#string">2. <code>std::string</code> · 自带小口袋的储物柜</a></li>
+        <li><a href="#unique">3. <code>std::unique_ptr</code> · 只有一把的钥匙</a></li>
+        <li><a href="#shared">4. <code>std::shared_ptr</code> · 合租房与计数牌</a></li>
+        <li><a href="#compare">5. 对比、选择流程与背诵版</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="overview">
+      <h2>0. 总览：它们是同一类东西 —— 资源管家</h2>
+      <p>这四个的共同身份是：<strong>帮你管资源，让你不用写 <code>new</code> / <code>delete</code></strong>。</p>
+      <div class="guide-ascii">                     它管的是什么             比喻
+std::vector&lt;T&gt;   →   一片可变长的对象数组      会自动扩建的储物柜
+std::string      →   一串字符                 专门装字的储物柜（自带小口袋）
+std::unique_ptr  →   一个对象，独占            只有一把的钥匙
+std::shared_ptr  →   一个对象，共享            合租房 + 门口的人数计数牌</div>
+      <p>它们都遵守 <strong>RAII</strong>：<strong>构造时拿资源，析构时自动还</strong> —— 无论你是正常返回、提前 <code>return</code>、还是抛异常。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="vector">
+      <h2>1. <code>std::vector</code> · 会自动扩建的储物柜</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>你租了<strong>一排连号的储物柜</strong>（连续内存）。柜子编号连续，所以按编号取东西<strong>极快</strong>（<code>v[i]</code> 就是地址加偏移）。柜子租满了怎么办？去租一排<strong>更大的</strong>（通常是 2 倍），把东西<strong>全搬过去</strong>，退掉旧的。</p>
+      </div>
+
+      <div class="guide-ascii">起初：容量 4，用了 4
+  [A][B][C][D]
+
+再放一个 E → 满了，必须扩容：
+  1. 租一排 8 个的新柜子
+  2. 把 A B C D 搬过去（移动或拷贝）
+  3. 退掉旧柜子
+  4. 放入 E
+
+  [A][B][C][D][E][ ][ ][ ]
+       ↑ 注意：所有东西的【地址都变了】</div>
+
+      <h3>1.1 内存布局：其实就三个指针</h3>
+      <div class="guide-ascii">vector 对象本身（栈上，通常 24 字节）：
+  ┌──────────┬──────────┬──────────┐
+  │  begin   │   end    │ capacity │
+  └────┬─────┴────┬─────┴────┬─────┘
+       │          │          │
+       ↓          ↓          ↓
+堆上： [A][B][C][D][ ][ ][ ][ ]
+       └── size=4 ──┘
+       └──── capacity=8 ─────┘</div>
+      <p>所以 <code>sizeof(std::vector&lt;int&gt;)</code> 是固定的（一般 24 字节），<strong>跟里面装多少东西无关</strong> —— 数据全在堆上。</p>
+
+      <h3>1.2 <code>size</code> vs <code>capacity</code>（必分清）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>含义</th><th>比喻</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>size()</code></td><td>实际装了几个</td><td>用了几个柜子</td></tr>
+            <tr><td><code>capacity()</code></td><td>最多能装几个而不用搬家</td><td>一共租了几个柜子</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="answer-code-block"><code>std::vector&lt;int&gt; v;
+v.reserve(1000);      // 先租 1000 个柜子，但一个没用
+// size() == 0, capacity() == 1000
+
+for (int i = 0; i &lt; 1000; ++i)
+    v.push_back(i);   // ✓ 全程零次扩容、零次搬家</code></pre>
+      <p><strong><code>reserve</code> 是最容易拿到的性能优化</strong>：知道大概多少个就先 <code>reserve</code>。</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>函数</th><th>改 size</th><th>改 capacity</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>reserve(n)</code></td><td>否</td><td>扩到 ≥n</td><td>只订柜子，不放东西</td></tr>
+            <tr><td><code>resize(n)</code></td><td>是</td><td>可能扩</td><td>真的构造/销毁元素</td></tr>
+            <tr><td><code>shrink_to_fit()</code></td><td>否</td><td>缩到 size</td><td>退掉多余的柜子（非强制）</td></tr>
+            <tr><td><code>clear()</code></td><td>变 0</td><td><strong>不变</strong></td><td>东西清空，柜子还租着</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>clear()</code> 不释放内存 —— 想真正还回去用 <code>std::vector&lt;T&gt;().swap(v)</code>，或 <code>clear()</code> + <code>shrink_to_fit()</code>。</p>
+
+      <h3>1.3 扩容为什么是「2 倍」而不是「加 1」</h3>
+      <div class="guide-ascii">每次 +1：  加 n 个元素要搬 1+2+3+...+n = O(n²) 次
+每次 ×2：  搬家次数 1+2+4+8+...+n ≈ 2n = O(n) 次
+           摊到每个元素上 → 【摊还 O(1)】</div>
+      <p>这就是「摊还常数时间」的由来。libstdc++ 用 2 倍，MSVC 用 1.5 倍。</p>
+
+      <h3>1.4 迭代器失效 —— vector 最大的坑</h3>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <p>扩容会让<strong>所有指针、引用、迭代器全部失效</strong>（东西搬到新柜子了，旧地址成了野指针）。</p>
+        <pre class="answer-code-block"><code>std::vector&lt;int&gt; v{1,2,3};
+int&amp; r = v[0];          // 拿了个引用
+v.push_back(4);         // ← 可能扩容
+std::cout &lt;&lt; r;         // ✗ 悬空引用，未定义行为</code></pre>
+      </div>
+
+      <pre class="answer-code-block"><code>// ✗ 错误：erase 后 it 失效了
+for (auto it = v.begin(); it != v.end(); ++it)
+    if (*it &lt; 0) v.erase(it);
+
+// ✓ 正确：erase 返回下一个有效迭代器
+for (auto it = v.begin(); it != v.end(); )
+    it = (*it &lt; 0) ? v.erase(it) : it + 1;
+
+// ✓ 更好：erase-remove 惯用法
+v.erase(std::remove_if(v.begin(), v.end(),
+                       [](int x){ return x &lt; 0; }),
+        v.end());
+// C++20：std::erase_if(v, [](int x){ return x &lt; 0; });</code></pre>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>操作</th><th>失效范围</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>push_back</code> / <code>insert</code> <strong>且扩容</strong></td><td><strong>全部</strong></td></tr>
+            <tr><td><code>push_back</code> 未扩容</td><td>只有 <code>end()</code></td></tr>
+            <tr><td><code>insert</code> 未扩容</td><td>插入点<strong>之后</strong>的全部</td></tr>
+            <tr><td><code>erase</code></td><td>删除点<strong>之后</strong>的全部</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>1.5 为什么快：cache 友好</h3>
+      <div class="guide-ascii">vector：  [A][B][C][D][E]        ← 内存连续，一次 cache line 拉进来一串
+list：    [A]→ ... [C]→ ... [B]  ← 内存散落，每跳一次就 cache miss</div>
+      <p>现代 CPU 上，<strong>遍历 <code>vector</code> 常常比 <code>list</code> 快 10 倍以上</strong>，即使理论复杂度一样。所以：<strong>默认就用 <code>vector</code></strong>，除非有明确理由不用。</p>
+
+      <h3>1.6 <code>vector&lt;bool&gt;</code> 是个假容器</h3>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <p>它被特化成了<strong>位图</strong>（1 个 bool 占 1 bit），<code>operator[]</code> 返回的是<strong>代理对象</strong>而不是 <code>bool&amp;</code>。</p>
+        <pre class="answer-code-block"><code>std::vector&lt;bool&gt; v(10);
+bool&amp; r = v[0];         // ✗ 编译错误
+auto x = v[0];          // ✗ x 的类型是代理，不是 bool
+bool* p = &amp;v[0];        // ✗ 取不到地址</code></pre>
+        <p>替代方案：用 <code>std::vector&lt;char&gt;</code> 或 <code>std::deque&lt;bool&gt;</code>。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="string">
+      <h2>2. <code>std::string</code> · 自带小口袋的储物柜</h2>
+      <p>本质上 <code>std::string</code> ≈ <code>std::vector&lt;char&gt;</code> + 一堆文本操作 + <strong>SSO</strong> + 末尾隐含的 <code>'\0'</code>。<code>size()</code>、<code>capacity()</code>、<code>reserve()</code>、扩容规则、迭代器失效 —— 和 <code>vector</code> <strong>完全一样</strong>。</p>
+
+      <h3>2.1 核心优化：SSO（小字符串优化）</h3>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>现实中的字符串绝大多数很短（<code>"id"</code>、<code>"OK"</code>、<code>"600519"</code>）。为这么短的东西跑一趟 <code>new</code> 太亏了，所以 <code>string</code> 在<strong>自己身上缝了一个小口袋</strong> —— 短字符串直接塞口袋里（栈上），根本不碰堆。</p>
+      </div>
+      <div class="guide-ascii">短字符串（SSO，不分配堆内存）：
+  string 对象 ┌────────────────────────────┐
+             │ "hello\0"  ...  │ size │标记│   ← 全在栈上
+             └────────────────────────────┘
+
+长字符串（超过阈值，退化成 vector 模式）：
+  string 对象 ┌──────┬──────┬──────────┐
+             │ ptr  │ size │ capacity │
+             └──┬───┴──────┴──────────┘
+                ↓
+  堆：  "这是一个很长很长的字符串......"</div>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>实现（64 位）</th><th><code>sizeof(string)</code></th><th>SSO 能存几个字符</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>libstdc++ (GCC)</td><td>32</td><td>15</td></tr>
+            <tr><td>libc++ (Clang)</td><td>24</td><td>22</td></tr>
+            <tr><td>MSVC</td><td>32</td><td>15</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>实践含义</strong>：短字符串的拷贝几乎免费；一旦超过 15/22 字符，每次拷贝就是一次堆分配。热路径上要留意。</p>
+
+      <h3>2.2 常用操作</h3>
+      <pre class="answer-code-block"><code>std::string s = "hello";
+
+s += " world";                 // 追加
+s.append(3, '!');              // "hello world!!!"
+s.substr(0, 5);                // "hello"（返回【新对象】，有拷贝）
+s.find("wor");                 // 返回下标，找不到返回 std::string::npos
+s.replace(0, 5, "HELLO");
+s.c_str();                     // 拿到 const char*，保证以 '\0' 结尾（给 C API 用）
+s.data();                      // C++17 起等同 c_str()</code></pre>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">两个高频坑</span>
+        <p><strong>① <code>find</code> 找不到时返回 <code>npos</code>（一个很大的 <code>size_t</code>），不是 -1：</strong></p>
+        <pre class="answer-code-block"><code>if (s.find("x") != std::string::npos) { ... }   // ✓ 必须这样判断
+if (s.find("x") &gt;= 0) { ... }                   // ✗ 永远为真</code></pre>
+        <p><strong>② <code>c_str()</code> 的悬空陷阱：</strong></p>
+        <pre class="answer-code-block"><code>const char* p = getName().c_str();    // ✗ 临时 string 立刻析构，p 悬空
+use(p);
+
+std::string s = getName();             // ✓ 先接住
+use(s.c_str());</code></pre>
+      </div>
+
+      <h3>2.3 <code>std::string_view</code>（C++17）· 只看不拿</h3>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p><code>string</code> 是<strong>一本书</strong>，<code>string_view</code> 是<strong>一张写着「第几页到第几页」的便条</strong> —— 只是「指针 + 长度」的轻量视图，不拥有数据、不分配内存。</p>
+      </div>
+      <pre class="answer-code-block"><code>void log(const std::string&amp; s);
+log("hello");            // ✗ 从字面量构造了一个临时 string → 可能有堆分配
+
+void log(std::string_view s);    // ✓ 零拷贝
+log("hello");                    // 直接指向字面量
+log(myString);                   // 直接指向 myString 的缓冲区</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <p>它<strong>不延长生命周期</strong> —— 原字符串没了，view 就悬空。</p>
+        <pre class="answer-code-block"><code>std::string_view sv;
+{
+    std::string s = "temp";
+    sv = s;
+}                    // s 销毁
+use(sv);             // ✗ 悬空</code></pre>
+        <p><strong>用法规则</strong>：适合做<strong>函数参数</strong>（只读、不保存）；不要存成成员变量，除非能确保底层数据活得更久。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="unique">
+      <h2>3. <code>std::unique_ptr</code> · 只有一把的钥匙</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>你手上有<strong>一栋房子的唯一钥匙</strong>：全世界只有这一把，<strong>不能复印</strong>（禁止拷贝）；可以<strong>交给别人</strong>（<code>std::move</code>），交出去后你手上就没了；你<strong>走的时候</strong>（离开作用域），<strong>自动把房子拆了</strong>（<code>delete</code>）。</p>
+      </div>
+
+      <pre class="answer-code-block"><code>{
+    auto p = std::make_unique&lt;Order&gt;(123);
+    p-&gt;submit();
+}   // ← p 析构，Order 自动 delete，不管中间是 return 还是抛异常</code></pre>
+
+      <h3>3.1 关键特性：零开销</h3>
+      <pre class="answer-code-block"><code>sizeof(std::unique_ptr&lt;int&gt;) == sizeof(int*)    // 通常 8 字节，一模一样</code></pre>
+      <div class="guide-callout is-key">
+        <span class="callout-label">结论</span>
+        <p>它就是个裸指针的壳，<strong>运行期没有任何额外代价</strong>，所有安全性都在编译期完成。所以<strong>不要因为「怕慢」而用裸指针 <code>new/delete</code></strong>。</p>
+      </div>
+
+      <h3>3.2 常用操作</h3>
+      <pre class="answer-code-block"><code>auto p = std::make_unique&lt;Order&gt;(id, price);   // ✓ 永远优先 make_unique（C++14）
+
+auto q = p;              // ✗ 编译错误：不能拷贝
+auto q = std::move(p);   // ✓ p 变成 nullptr
+
+p-&gt;submit();             // 像指针一样用
+*p;                      // 解引用
+p.get();                 // 拿裸指针（传给 C API，但【不要】让别人 delete 它）
+p.reset();               // 立刻释放，p 变 nullptr
+p.reset(new Order(...)); // 释放旧的，接管新的
+auto raw = p.release();  // 【放弃所有权】，返回裸指针，从此你要自己 delete
+if (p) { ... }           // 判空</code></pre>
+
+      <h3>3.3 数组版本与自定义删除器</h3>
+      <pre class="answer-code-block"><code>auto arr = std::make_unique&lt;int[]&gt;(100);   // 用 delete[] 释放，支持 operator[]
+
+// 包装 C 资源：无论怎么退出，fclose 一定被调用
+auto closer = [](FILE* f) { if (f) fclose(f); };
+std::unique_ptr&lt;FILE, decltype(closer)&gt; fp(fopen("a.txt", "r"), closer);</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">注意</span>
+        <p>带<strong>状态</strong>的删除器（函数指针、有捕获的 lambda）会让 <code>unique_ptr</code> 变大：</p>
+        <pre class="answer-code-block"><code>std::unique_ptr&lt;FILE, decltype(&amp;fclose)&gt; fp(...);   // sizeof = 16（多存了函数指针）
+std::unique_ptr&lt;FILE, FdCloser&gt; fp2(...);           // sizeof = 8（空类，被 EBO 优化掉）</code></pre>
+        <p>优先用<strong>无状态的函数对象 / 无捕获 lambda</strong>。</p>
+      </div>
+
+      <h3>3.4 典型应用：工厂函数 + 多态</h3>
+      <pre class="answer-code-block"><code>std::unique_ptr&lt;Strategy&gt; createStrategy(Type t) {
+    switch (t) {
+        case Type::TWAP: return std::make_unique&lt;TwapStrategy&gt;();
+        case Type::VWAP: return std::make_unique&lt;VwapStrategy&gt;();
+    }
+}
+
+auto s = createStrategy(Type::TWAP);   // 所有权明确地交给调用方</code></pre>
+      <p>⚠️ 通过基类指针删除时，<strong>基类必须有虚析构函数</strong>（<code>virtual ~Strategy() = default;</code>），否则派生类部分不会被析构。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="shared">
+      <h2>4. <code>std::shared_ptr</code> · 合租房与门口的计数牌</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>一栋房子，<strong>很多人都有钥匙</strong>。门口挂着一块<strong>计数牌</strong>：每多一个人拿钥匙 → 计数 +1；每有一个人走掉 → 计数 −1；<strong>最后一个走的人关灯拆房</strong>（计数归 0 → <code>delete</code> 对象）。</p>
+      </div>
+
+      <div class="guide-ascii">        ┌──────────────┐
+        │    房子       │  ← 被管理的对象
+        │  (Order)     │
+        └──────┬───────┘
+               │
+        ┌──────┴───────┐
+        │  计数牌: 3   │  ← 控制块（在堆上）
+        │  弱引用: 1   │
+        └──────────────┘
+          ↑    ↑    ↑
+         p1   p2   p3     ← 三个 shared_ptr</div>
+
+      <pre class="answer-code-block"><code>auto p1 = std::make_shared&lt;Order&gt;(123);   // 计数 = 1
+{
+    auto p2 = p1;                         // 计数 = 2
+    auto p3 = p1;                         // 计数 = 3
+}                                          // p2 p3 析构 → 计数 = 1
+                                           // p1 析构 → 计数 = 0 → Order 被 delete</code></pre>
+
+      <h3>4.1 内存布局：两个指针 + 堆上的控制块</h3>
+      <div class="guide-ascii">sizeof(std::shared_ptr&lt;int&gt;) == 16    // 是 unique_ptr 的两倍
+
+shared_ptr 对象：
+  ┌───────────┬────────────────┐
+  │ 对象指针   │  控制块指针     │
+  └─────┬─────┴────────┬───────┘
+        ↓              ↓
+   [ Order 对象 ]  ┌─────────────────┐
+                  │ 强引用计数(原子) │
+                  │ 弱引用计数(原子) │
+                  │ 删除器           │
+                  │ 分配器           │
+                  └─────────────────┘</div>
+
+      <h3>4.2 <code>make_shared</code> vs <code>new</code>：一次分配 vs 两次</h3>
+      <pre class="answer-code-block"><code>std::shared_ptr&lt;Order&gt; p(new Order(1));      // ✗ 两次堆分配：对象 + 控制块
+auto p = std::make_shared&lt;Order&gt;(1);         // ✓ 一次分配，对象和控制块【挨在一起】</code></pre>
+      <div class="guide-ascii">new 版本：   [Order] ... 远处 ... [控制块]     ← 两次 malloc，两处 cache miss
+make 版本：  [控制块|Order]                    ← 一次 malloc，cache 友好</div>
+      <p><code>make_shared</code> 还能避免异常时的内存泄漏：<code>f(std::shared_ptr&lt;A&gt;(new A), g())</code> 中若求值顺序是 <code>new A</code> → <code>g()</code> 抛异常 → 那个 <code>A</code> 就泄漏了。</p>
+      <div class="guide-callout is-warn">
+        <span class="callout-label"><code>make_shared</code> 的唯一缺点</span>
+        <p>因为对象和控制块在同一块内存，只要还有 <strong><code>weak_ptr</code></strong> 活着，<strong>那块内存就不能释放</strong>（对象已析构，但内存还占着）。对象很大 + <code>weak_ptr</code> 长寿时，用 <code>new</code> 版本反而好。</p>
+      </div>
+
+      <h3>4.3 坑一：从同一个裸指针构造两次</h3>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <pre class="answer-code-block"><code>Order* raw = new Order(1);
+std::shared_ptr&lt;Order&gt; p1(raw);
+std::shared_ptr&lt;Order&gt; p2(raw);   // ✗ 【两个独立的控制块】，各自计数为 1
+                                  // → 析构时 double free，程序崩溃</code></pre>
+        <div class="guide-ascii">错误状态：
+  p1 → [控制块A: 1]  ┐
+                     ├→ [同一个 Order]     ← 会被 delete 两次
+  p2 → [控制块B: 1]  ┘</div>
+        <p><strong>铁律：一个裸指针只能交给 <code>shared_ptr</code> 一次。最好的办法是根本不出现裸指针 —— 永远用 <code>make_shared</code>，复制时从已有的 <code>shared_ptr</code> 复制。</strong></p>
+      </div>
+
+      <h3>4.4 坑二：在成员函数里 <code>shared_ptr&lt;T&gt;(this)</code></h3>
+      <pre class="answer-code-block"><code>class Session {
+    void start() {
+        registerCallback(std::shared_ptr&lt;Session&gt;(this));   // ✗ 新建控制块 → double free
+    }
+};</code></pre>
+      <p>正解是继承 <code>std::enable_shared_from_this</code>：</p>
+      <pre class="answer-code-block"><code>class Session : public std::enable_shared_from_this&lt;Session&gt; {
+public:
+    void start() {
+        registerCallback(shared_from_this());   // ✓ 复用已有的控制块
+    }
+};
+
+auto s = std::make_shared&lt;Session&gt;();   // ★ 前提：对象本身必须由 shared_ptr 管理
+s-&gt;start();</code></pre>
+      <p>⚠️ 不能在<strong>构造函数里</strong>调用 <code>shared_from_this()</code>（那时控制块还没建好）。</p>
+
+      <h3>4.5 坑三：循环引用 → 永久泄漏</h3>
+      <pre class="answer-code-block"><code>struct Node {
+    std::shared_ptr&lt;Node&gt; next;
+    std::shared_ptr&lt;Node&gt; prev;    // ✗ 互相持有
+};
+
+auto a = std::make_shared&lt;Node&gt;();
+auto b = std::make_shared&lt;Node&gt;();
+a-&gt;next = b;
+b-&gt;prev = a;
+// 离开作用域后：外部引用没了，但它们【互相】还各持有对方一个引用
+// → 计数都停在 1 → 永远不会被释放</code></pre>
+      <div class="guide-ascii">     a ←──── prev ──── b
+     └──── next ────→ ┘
+     两个人互相攥着对方的钥匙，谁也走不掉</div>
+      <p><strong>解法：把其中一个方向改成 <code>weak_ptr</code></strong>（观察但不持有）：</p>
+      <pre class="answer-code-block"><code>struct Node {
+    std::shared_ptr&lt;Node&gt; next;   // 强：我负责下一个的生命周期
+    std::weak_ptr&lt;Node&gt;   prev;   // 弱：我只是能看到上一个，不管它死活
+};</code></pre>
+      <div class="guide-callout is-key">
+        <span class="callout-label">通用规则</span>
+        <p><strong>父持子用 <code>shared_ptr</code>，子回指父用 <code>weak_ptr</code></strong>。观察者、缓存、回调也一律用 <code>weak_ptr</code>。</p>
+      </div>
+      <pre class="answer-code-block"><code>std::weak_ptr&lt;Node&gt; w = sp;
+
+if (auto sp2 = w.lock()) {    // ★ 必须先 lock 提升成 shared_ptr
+    sp2-&gt;doSomething();        // 在这个作用域里对象保证活着
+} else {
+    // 对象已经被销毁了
+}
+
+w.expired();      // 检查是否已失效（但 check 完再 lock 有竞态，直接 lock 更好）
+w.use_count();    // 强引用计数</code></pre>
+
+      <h3>4.6 坑四：线程安全的边界</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>内容</th><th>线程安全？</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>引用计数的增减</strong></td><td>✓ 安全，是原子操作</td></tr>
+            <tr><td>多线程读同一个 <code>shared_ptr</code>（只拷贝，不改）</td><td>✓ 安全</td></tr>
+            <tr><td>多线程同时读写<strong>同一个 <code>shared_ptr</code> 变量</strong></td><td>✗ <strong>不安全</strong>，需加锁或用 <code>std::atomic&lt;std::shared_ptr&gt;</code>（C++20）</td></tr>
+            <tr><td>多线程访问<strong>它指向的对象</strong></td><td>✗ <strong>不安全</strong>，对象本身该加锁还得加锁</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-key">
+        <span class="callout-label">一句话记忆</span>
+        <p><code>shared_ptr</code> 保证「<strong>计数</strong>」是线程安全的，不保证「<strong>指针本身</strong>」和「<strong>指向的对象</strong>」是线程安全的。</p>
+      </div>
+
+      <h3>4.7 性能代价</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th><code>unique_ptr</code></th><th><code>shared_ptr</code></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>大小</td><td>8 字节</td><td>16 字节</td></tr>
+            <tr><td>堆分配</td><td>1 次（对象）</td><td>1~2 次（+控制块）</td></tr>
+            <tr><td>拷贝</td><td>✗ 不可</td><td>原子递增（多核竞争时开销明显）</td></tr>
+            <tr><td>析构</td><td>直接 delete</td><td>原子递减 + 判零</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>热路径上频繁拷贝 <code>shared_ptr</code> 是常见的性能问题 —— 传参时用 <code>const shared_ptr&lt;T&gt;&amp;</code> 或直接传 <code>T&amp;</code>，避免不必要的计数抖动。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="compare">
+      <h2>5. 对比、选择流程与背诵版</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th><code>vector</code></th><th><code>string</code></th><th><code>unique_ptr</code></th><th><code>shared_ptr</code></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>管什么</td><td>一批对象</td><td>字符序列</td><td>单个对象</td><td>单个对象</td></tr>
+            <tr><td>所有权</td><td>独占</td><td>独占</td><td><strong>独占</strong></td><td><strong>共享</strong></td></tr>
+            <tr><td>可拷贝</td><td>✓ 深拷贝</td><td>✓ 深拷贝</td><td>✗ <strong>只能移动</strong></td><td>✓ 计数+1</td></tr>
+            <tr><td>对象大小</td><td>24</td><td>24~32</td><td>8</td><td>16</td></tr>
+            <tr><td>特色</td><td>连续内存、摊还扩容</td><td><strong>SSO</strong></td><td><strong>零开销</strong></td><td><strong>引用计数</strong></td></tr>
+            <tr><td>主要坑</td><td>迭代器失效、<code>vector&lt;bool&gt;</code></td><td><code>c_str</code> 悬空、<code>npos</code></td><td>忘了虚析构</td><td>循环引用、双控制块</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-ascii">要存一批同类型数据？
+  └→ 是 → std::vector（默认首选）
+  └→ 是字符？ → std::string；只读传参 → std::string_view
+
+要管单个堆对象？
+  └→ 所有权明确只有一个主人？
+        └→ 是 → std::unique_ptr   ← 【90% 的情况】
+        └→ 否，确实要多方共享且无法确定谁最后走
+              └→ std::shared_ptr
+                    └→ 有反向引用/观察关系 → 对应位置用 weak_ptr
+
+只是"看一眼，不管生命周期"？
+  └→ 裸指针 T* 或引用 T&amp;（表示"非拥有"是完全合法的用法）</div>
+
+      <h3>三条实践铁律</h3>
+      <ol>
+        <li><strong>默认用 <code>vector</code></strong>，除非有明确理由换别的容器。</li>
+        <li><strong>默认用 <code>unique_ptr</code></strong>，只有真的需要共享时才升级到 <code>shared_ptr</code>（<code>unique_ptr</code> 可随时 <code>std::move</code> 转成 <code>shared_ptr</code>，反过来不行）。</li>
+        <li><strong>代码里不该出现裸 <code>new</code> / <code>delete</code></strong> —— 一律 <code>make_unique</code> / <code>make_shared</code>。</li>
+      </ol>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">一页背诵</span>
+        <p><strong><code>vector</code></strong>＝会自动扩建的连号储物柜。三个指针 + 堆数组，满了就 ×2 搬家（摊还 O(1)），<strong>搬家后所有迭代器失效</strong>。<code>reserve</code> 是免费的性能，cache 友好，默认首选。<br />
+          <strong><code>string</code></strong> ≈ <code>vector&lt;char&gt;</code> + <strong>SSO</strong>（短串直接存对象里，约 15/22 字符）。只读传参用 <code>string_view</code>，但它<strong>不延长生命周期</strong>。<br />
+          <strong><code>unique_ptr</code></strong>＝唯一的一把钥匙，<strong>零开销</strong>（8 字节），<strong>只能移动不能拷贝</strong>，走时自动拆房。多态删除记得<strong>虚析构</strong>。<br />
+          <strong><code>shared_ptr</code></strong>＝合租房 + 门口原子计数牌，最后一个走的人关灯。<strong>16 字节 + 控制块</strong>，优先 <code>make_shared</code>。三大坑：<strong>循环引用</strong>（配 <code>weak_ptr</code> 破）、<strong>同一裸指针建两次</strong>、<strong>线程安全只保证计数</strong>。</p>
+      </div>
+
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./cpp-concurrency-notes.html">下一篇：并发与线程</a>
+        <a class="secondary-button" href="./cpp-value-semantics.html">上一篇：拷贝与移动</a>
+        <a class="secondary-button" href="./index.html?category=C%2B%2B%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">去刷 C++ 知识直讲</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记，可与「拷贝与移动」「并发与线程」「C++ 核心笔记」配合阅读。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./cpp-modern-notes.html">C++ 核心笔记</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>

@@ -1023,3 +1023,85 @@ a.secondary-button {
 .memo-list li + li {
   margin-top: 8px;
 }
+
+/* 形象化讲解组件：比喻卡 / ASCII 示意图 / 易踩坑 / 一句话背诵 */
+.guide-callout {
+  margin: 14px 0 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(79, 140, 255, 0.16);
+  background: rgba(79, 140, 255, 0.06);
+}
+
+.guide-callout > :first-child {
+  margin-top: 0;
+}
+
+.guide-callout > :last-child {
+  margin-bottom: 0;
+}
+
+.guide-callout .callout-label {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  background: rgba(79, 140, 255, 0.16);
+  color: var(--accent-strong);
+}
+
+.guide-callout.is-metaphor {
+  border-color: rgba(255, 176, 32, 0.28);
+  background: rgba(255, 176, 32, 0.08);
+}
+
+.guide-callout.is-metaphor .callout-label {
+  background: rgba(255, 176, 32, 0.2);
+  color: #b9761a;
+}
+
+.guide-callout.is-warn {
+  border-color: rgba(240, 86, 86, 0.28);
+  background: rgba(240, 86, 86, 0.07);
+}
+
+.guide-callout.is-warn .callout-label {
+  background: rgba(240, 86, 86, 0.18);
+  color: #c33c3c;
+}
+
+.guide-callout.is-key {
+  border-color: rgba(46, 182, 125, 0.3);
+  background: rgba(46, 182, 125, 0.08);
+}
+
+.guide-callout.is-key .callout-label {
+  background: rgba(46, 182, 125, 0.2);
+  color: #1f8a5c;
+}
+
+.guide-callout.is-key p {
+  font-size: 1.02rem;
+  color: var(--text);
+}
+
+.guide-ascii {
+  margin: 12px 0 16px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(79, 140, 255, 0.14);
+  background: #0d1728;
+  color: #cfe3ff;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.guide-article .guide-ascii b {
+  color: #ffd479;
+  font-weight: 600;
+}

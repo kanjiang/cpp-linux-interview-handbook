@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Linux 系统编程形象笔记 · epoll/mmap/信号/core dump/OOM</title>
+  <meta name="description" content="用点名与信箱、开窗看仓库、拍肩膀、黑匣子、救生艇扔人的比喻讲清 epoll 的 LT/ET、mmap 的零拷贝与缺页、信号的异步安全限制、core dump 分析流程、OOM Killer 与 overcommit。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Linux System Programming</p>
+        <h1>Linux 系统编程 · 形象笔记</h1>
+        <p>epoll 是「从挨个点名改成谁有事自己举手」，mmap 是「给文件开一扇窗不用来回搬箱子」，信号是「干活时被拍肩膀」，core dump 是「飞机黑匣子」，OOM 是「救生艇超载扔人」。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20Linux%E4%B8%8E%E8%B0%83%E8%AF%95">刷 Linux 与调试题</a>
+          <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>
+          <a class="secondary-button" href="./cpp-concurrency-notes.html">并发与线程</a>
+          <a class="secondary-button" href="./hundsun.html">恒生准备页</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#epoll">1. epoll · 从挨个点名到谁有事自己举手</a></li>
+        <li><a href="#mmap">2. mmap · 给文件开一扇窗</a></li>
+        <li><a href="#signal">3. 信号 · 干活时被拍肩膀</a></li>
+        <li><a href="#core">4. core dump · 飞机的黑匣子</a></li>
+        <li><a href="#oom">5. OOM · 救生艇超载扔人</a></li>
+        <li><a href="#cheatsheet">6. 一页速记</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="epoll">
+      <h2>1. epoll · 从挨个点名到谁有事自己举手</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>假设你是老师，班上一万个学生，要知道谁举手了。<strong>select</strong> 是每轮把全班名单交给教务处，教务处从头看到尾说「有人举手了」，你再自己从头找一遍是谁。<strong>epoll</strong> 是教务处那边常驻一份名单（不用每次交），门口挂个<strong>信箱</strong>，谁举手谁自己往信箱投条子，你只需要看信箱。</p>
+      </div>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>方式</th><th>做法</th><th>问题</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>阻塞 IO</td><td>盯着一个学生等他举手</td><td>一次只能管一个</td></tr>
+            <tr><td><strong>select</strong></td><td>每次把整个 fd 集合拷进内核，返回后自己 O(n) 遍历找</td><td>反复拷贝；两次 O(n)；<strong>最多 1024 个</strong></td></tr>
+            <tr><td><strong>poll</strong></td><td>同上，改用数组，无数量上限</td><td>仍然每次拷贝 + O(n) 遍历</td></tr>
+            <tr><td><strong>epoll</strong></td><td>fd 常驻内核；就绪时由回调挂进就绪链表</td><td>O(1)，只返回就绪的那几个</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>1.1 内核里的结构</h3>
+      <div class="guide-ascii">epoll 实例（一个 fd）
+  ├── 红黑树：存所有【注册过】的 fd     ← epoll_ctl 增删改，O(log n)
+  └── 就绪链表 rdllist：存【已就绪】的 fd
+            ↑
+      网卡数据到达 → 驱动回调 → 把对应 fd 挂进就绪链表
+
+epoll_wait 只是【看一眼就绪链表】→ O(1)，和总连接数无关</div>
+      <p>关键区别：<strong>select/poll 是「主动轮询」，epoll 是「被动回调」</strong>。</p>
+
+      <h3>1.2 三个函数</h3>
+      <pre class="answer-code-block"><code>int epfd = epoll_create1(0);                  // 造一个 epoll 实例
+
+struct epoll_event ev;
+ev.events  = EPOLLIN;                          // 关心可读
+ev.data.fd = sockfd;                           // 附带信息（也可放指针）
+epoll_ctl(epfd, EPOLL_CTL_ADD, sockfd, &amp;ev);  // 注册（ADD / MOD / DEL）
+
+struct epoll_event events[1024];
+int n = epoll_wait(epfd, events, 1024, -1);    // 等，返回就绪个数
+
+for (int i = 0; i &lt; n; ++i) {
+    handle(events[i].data.fd);                 // 直接就是就绪的，无需遍历全部
+}</code></pre>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>事件</th><th>含义</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>EPOLLIN</code> / <code>EPOLLOUT</code></td><td>可读 / 可写</td></tr>
+            <tr><td><code>EPOLLERR</code> / <code>EPOLLHUP</code></td><td>出错 / 挂断（<strong>总会被通知，不用注册</strong>）</td></tr>
+            <tr><td><code>EPOLLRDHUP</code></td><td><strong>对端关闭了写端</strong> —— 检测断连的关键</td></tr>
+            <tr><td><code>EPOLLET</code></td><td>边缘触发</td></tr>
+            <tr><td><code>EPOLLONESHOT</code></td><td>触发一次后自动禁用，需重新 MOD 启用</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>1.3 LT vs ET（必考）</h3>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p><strong>水平触发 LT</strong>（默认）：只要缓冲区里还有数据，我就一直提醒你 —— 像闹钟响个不停，直到你把事办完。<br />
+          <strong>边缘触发 ET</strong>：只在「从没有到有」的那一瞬间提醒你一次 —— 像门铃只响一声，没听见就没了。</p>
+      </div>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>LT</th><th>ET</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>通知次数</td><td>有数据就一直通知</td><td>状态变化时通知一次</td></tr>
+            <tr><td>是否必须一次读完</td><td>否，可以慢慢读</td><td><strong>必须读到 <code>EAGAIN</code> 为止</strong></td></tr>
+            <tr><td>是否必须非阻塞</td><td>否</td><td><strong>必须 <code>O_NONBLOCK</code></strong></td></tr>
+            <tr><td>系统调用次数</td><td>多</td><td>少</td></tr>
+            <tr><td>编程难度</td><td>简单，不易错</td><td>容易漏数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>ET 的正确写法</strong>（这个循环是标志性的）：</p>
+      <pre class="answer-code-block"><code>// 前提：fd 已设为 O_NONBLOCK
+while (true) {
+    ssize_t n = read(fd, buf, sizeof(buf));
+    if (n &gt; 0) {
+        process(buf, n);
+    } else if (n == 0) {
+        closeConn(fd);              // 对端正常关闭
+        break;
+    } else {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) break;  // ✓ 读干净了
+        if (errno == EINTR) continue;                        // 被信号打断，重试
+        closeConn(fd);                                       // 真错误
+        break;
+    }
+}</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">为什么 ET 必须非阻塞</span>
+        <p>你要循环读到 <code>EAGAIN</code> 才知道读完了；如果 fd 是阻塞的，最后那次没数据的 <code>read</code> 会<strong>永久卡死整个事件循环</strong>。</p>
+      </div>
+
+      <h3>1.4 惊群与 Reactor</h3>
+      <p><strong>惊群问题</strong>：多个线程/进程都在 <code>epoll_wait</code> 同一个监听 fd，来一个连接把所有人都吵醒，但只有一个能 <code>accept</code> 成功。解法是 <code>EPOLLEXCLUSIVE</code>（Linux 4.5+，只唤醒一个）或 <code>SO_REUSEPORT</code>（每线程一个独立 listen fd，内核负载均衡，Nginx 的做法）。</p>
+      <div class="guide-ascii">主从 Reactor（muduo / Netty / Nginx 的架构）：
+
+  主 Reactor（1 个线程）  只负责 accept 新连接
+        │
+        └→ 轮流分发给 ──→ 从 Reactor 1（各自一个 epoll + 线程）
+                      ──→ 从 Reactor 2
+                      ──→ 从 Reactor N   每个连接固定归属一个线程
+                                          → 该连接内无需加锁</div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p><code>select/poll</code> 每次都要把全部 fd 拷进内核并 O(n) 遍历，epoll 用红黑树常驻注册 + 就绪回调链表，<code>epoll_wait</code> 只返回就绪的，复杂度与连接总数无关。ET 比 LT 少一半系统调用，但必须配非阻塞 fd 并循环读到 <code>EAGAIN</code>。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="mmap">
+      <h2>2. mmap · 给文件开一扇窗，不用来回搬箱子</h2>
+
+      <h3>2.1 传统 <code>read</code> 的问题</h3>
+      <div class="guide-ascii">磁盘 ──DMA──→ [内核 page cache] ──CPU 拷贝──→ [用户缓冲区] ──→ 你的代码
+                                    ↑
+                              这一次拷贝是纯浪费</div>
+      <p>每次 <code>read()</code> 还要陷入内核（系统调用开销）。读一个 10GB 的文件，就要拷贝 10GB。</p>
+
+      <h3>2.2 mmap 的做法</h3>
+      <div class="guide-ascii">磁盘 ──DMA──→ [内核 page cache]
+                     ↑
+                     └── 直接映射到你的地址空间
+                         你的指针 p 就指向这里，读 p[i] 就是读文件</div>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p><code>read</code> 是「派人去仓库把货搬到你办公室」；<code>mmap</code> 是「在你办公室墙上开一扇窗，直接看仓库」—— 货一直在仓库，你看的就是原件。</p>
+      </div>
+      <pre class="answer-code-block"><code>int fd = open("data.bin", O_RDONLY);
+struct stat st; fstat(fd, &amp;st);
+
+char* p = (char*)mmap(nullptr, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+
+// 现在像操作数组一样操作文件，没有 read、没有拷贝
+std::cout &lt;&lt; p[12345];
+
+munmap(p, st.st_size);
+close(fd);</code></pre>
+
+      <h3>2.3 参数速查</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>参数</th><th>常用值</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>prot</code></td><td><code>PROT_READ</code> / <code>PROT_WRITE</code> / <code>PROT_EXEC</code> / <code>PROT_NONE</code></td></tr>
+            <tr><td><code>flags</code></td><td><code>MAP_SHARED</code>（改动写回文件、进程间可见）<br /><code>MAP_PRIVATE</code>（写时复制，改动只自己看得见）<br /><code>MAP_ANONYMOUS</code>（不关联文件，纯要内存）<br /><code>MAP_POPULATE</code>（<strong>预先加载所有页</strong>）<br /><code>MAP_HUGETLB</code>（用 2MB 大页）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>配套：<code>munmap()</code> 解除，<code>msync()</code> 强制刷盘，<code>madvise()</code> 给内核提示访问模式。</p>
+
+      <h3>2.4 四大用途</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>用途</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>① 大文件随机访问</td><td>行情历史数据、数据库文件；只有真正访问到的页才加载</td></tr>
+            <tr><td>② <strong>进程间共享内存</strong></td><td><code>MAP_SHARED</code> + <code>shm_open</code>，两进程映射同一块 → 零拷贝 IPC，<strong>行情分发的标配</strong></td></tr>
+            <tr><td>③ malloc 大块内存</td><td>glibc 中 &gt;128KB 的分配（<code>M_MMAP_THRESHOLD</code>）直接走 mmap 匿名映射</td></tr>
+            <tr><td>④ 加载可执行文件和动态库</td><td>你的程序本身就是被 mmap 进内存的</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.5 坑（面试爱问）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>坑</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>缺页中断不可控</strong></td><td>第一次访问某页会触发 page fault 陷内核，<strong>几微秒的延迟随机出现</strong>。低延迟系统必须 <code>MAP_POPULATE</code> 或启动时主动 touch 一遍预热</td></tr>
+            <tr><td><strong>SIGBUS</strong></td><td>映射后文件被 <code>truncate</code> 截断，访问超出部分 → SIGBUS 崩溃</td></tr>
+            <tr><td>小文件不划算</td><td>建立映射要改页表、刷 TLB，比一次 <code>read</code> 还贵</td></tr>
+            <tr><td>顺序流式读未必更快</td><td>内核 readahead 预读对 <code>read</code> 很友好，mmap 反而可能更慢</td></tr>
+            <tr><td>写回时机不确定</td><td><code>MAP_SHARED</code> 的脏页何时落盘由内核决定，要确定性得 <code>msync</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.6 全内存交易柜台里的典型用法</h3>
+      <pre class="answer-code-block"><code>// 启动时：申请大页 + 预先填充 + 锁住不换出
+void* p = mmap(nullptr, SIZE, PROT_READ | PROT_WRITE,
+               MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE | MAP_HUGETLB,
+               -1, 0);
+mlock(p, SIZE);       // 锁定物理内存，绝不 swap 出去
+
+// 之后所有订单对象都从这块内存里分配（配合内存池）
+// → 运行期零缺页、零 swap、延迟稳定</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p><code>mmap</code> 把文件或匿名内存映射进进程地址空间，省掉 page cache 到用户缓冲区的那次拷贝和反复的系统调用；代价是<strong>缺页中断的延迟不可控</strong>，所以低延迟场景要配 <code>MAP_POPULATE</code> + <code>mlock</code> 预热锁定。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="signal">
+      <h2>3. 信号 · 有人在你干活时拍你肩膀</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>你正在专心写代码（进程正常执行）→ 突然有人拍你肩膀说「电话！」（信号到达）→ 你<strong>立刻放下手头的事</strong>去接电话（跳转到信号处理函数）→ 接完回来，从刚才断的地方继续。</p>
+        <p>关键性质：<strong>异步、随时可能发生、打断的位置完全不可预测</strong>（可能正好在你 <code>malloc</code> 到一半的时候）。这是理解「handler 为什么限制这么多」的钥匙。</p>
+      </div>
+
+      <h3>3.1 常见信号表</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>信号</th><th>编号</th><th>触发原因</th><th>默认行为</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>SIGSEGV</code></td><td>11</td><td><strong>段错误</strong>：访问非法内存</td><td>终止 + core</td></tr>
+            <tr><td><code>SIGABRT</code></td><td>6</td><td><code>abort()</code>、未捕获异常、<code>assert</code> 失败</td><td>终止 + core</td></tr>
+            <tr><td><code>SIGBUS</code></td><td>7</td><td>总线错误：未对齐访问、mmap 越界</td><td>终止 + core</td></tr>
+            <tr><td><code>SIGFPE</code></td><td>8</td><td>算术错误：<strong>整数除零</strong></td><td>终止 + core</td></tr>
+            <tr><td><code>SIGPIPE</code></td><td>13</td><td><strong>往已关闭的连接写数据</strong></td><td>终止（<strong>无 core</strong>）</td></tr>
+            <tr><td><code>SIGTERM</code></td><td>15</td><td><code>kill pid</code>（优雅退出请求）</td><td>终止</td></tr>
+            <tr><td><code>SIGINT</code></td><td>2</td><td><strong>Ctrl+C</strong></td><td>终止</td></tr>
+            <tr><td><code>SIGKILL</code></td><td>9</td><td><code>kill -9</code>、<strong>OOM Killer</strong></td><td><strong>终止，不可捕获、不可忽略</strong></td></tr>
+            <tr><td><code>SIGSTOP</code></td><td>19</td><td>暂停</td><td><strong>暂停，不可捕获</strong></td></tr>
+            <tr><td><code>SIGCHLD</code></td><td>17</td><td>子进程结束</td><td>忽略</td></tr>
+            <tr><td><code>SIGHUP</code></td><td>1</td><td>终端断开 / 习惯用于<strong>重载配置</strong></td><td>终止</td></tr>
+            <tr><td><code>SIGUSR1</code>/<code>SIGUSR2</code></td><td>10/12</td><td>用户自定义</td><td>终止</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-key">
+        <span class="callout-label">记牢两个</span>
+        <p><code>SIGKILL</code> 和 <code>SIGSTOP</code> <strong>永远无法被捕获或忽略</strong> —— 这是内核留给管理员的最后手段，也是为什么被 OOM Killer 杀掉的进程<strong>没有任何机会做清理、也不会留下 core</strong>。</p>
+      </div>
+
+      <h3>3.2 最大的坑：handler 里几乎什么都不能做</h3>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <pre class="answer-code-block"><code>void handler(int sig) {
+    printf("caught %d\n", sig);      // ✗ printf 不是异步信号安全的
+    std::string s = "log";           // ✗ 会 malloc
+    mtx.lock();                      // ✗ 若被打断时正好持有这把锁 → 死锁
+    logger.write(...);               // ✗ 同上
+}</code></pre>
+        <p><strong>为什么</strong>：信号可能在任意指令处打断你，包括 <code>malloc</code> 正在改链表的中途。此时你在 handler 里又调 <code>malloc</code>，链表就彻底坏了。只能调用<strong>异步信号安全（async-signal-safe）</strong>的函数，白名单很短：<code>write</code>、<code>_exit</code>、<code>signal</code>、<code>kill</code>、<code>sigaction</code>、<code>read</code> 等（<code>man 7 signal-safety</code>）。</p>
+      </div>
+
+      <h3>3.3 四种正确姿势</h3>
+      <h4>① 只设标志位（最简单）</h4>
+      <pre class="answer-code-block"><code>volatile sig_atomic_t g_running = 1;
+
+void handler(int) { g_running = 0; }    // 只做这一件事
+
+int main() {
+    signal(SIGTERM, handler);
+    while (g_running) {                  // 在主循环里检查
+        doWork();
+    }
+    cleanup();                           // ✓ 在正常上下文里做清理
+}</code></pre>
+      <p><code>volatile sig_atomic_t</code> 是标准保证「读写原子、不会被优化掉」的唯一类型。</p>
+
+      <h4>② self-pipe trick（能配合 epoll）</h4>
+      <pre class="answer-code-block"><code>int pipefd[2];   // 启动时 pipe(pipefd)，设为非阻塞
+
+void handler(int sig) {
+    char c = (char)sig;
+    write(pipefd[1], &amp;c, 1);        // ✓ write 是安全的
+}
+// 主循环用 epoll 同时监听 pipefd[0] 和业务 socket
+// → 信号被"转换"成了一个普通的可读事件</code></pre>
+
+      <h4>③ <code>signalfd</code>（Linux 专属，最优雅）</h4>
+      <pre class="answer-code-block"><code>sigset_t mask;
+sigemptyset(&amp;mask);
+sigaddset(&amp;mask, SIGTERM);
+sigprocmask(SIG_BLOCK, &amp;mask, nullptr);   // 先阻塞默认处理
+
+int sfd = signalfd(-1, &amp;mask, 0);          // 信号变成一个 fd
+epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &amp;ev);  // 直接丢进 epoll
+// 读这个 fd 就能拿到 signalfd_siginfo，完全在正常上下文里处理</code></pre>
+
+      <h4>④ 专用信号线程（多线程程序推荐）</h4>
+      <pre class="answer-code-block"><code>// 主线程：阻塞所有信号（新建的线程会继承这个 mask）
+pthread_sigmask(SIG_BLOCK, &amp;mask, nullptr);
+
+// 专门开一个线程同步等信号
+std::thread([mask]{
+    int sig;
+    sigwait(&amp;mask, &amp;sig);      // 阻塞等待，不是 handler，随便写什么都行
+    handleGracefulShutdown(sig);
+});</code></pre>
+      <p>因为信号是发给<strong>整个进程</strong>的，默认会随机挑一个没阻塞它的线程来处理，行为不确定。</p>
+
+      <h3>3.4 <code>SIGPIPE</code>：网络编程必踩</h3>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <p>对端关闭连接后，你继续 <code>write</code> → 内核发 <code>SIGPIPE</code> → <strong>默认直接终止进程</strong>。服务器就这么莫名其妙没了。</p>
+        <pre class="answer-code-block"><code>signal(SIGPIPE, SIG_IGN);                   // ✓ 全局忽略，write 返回 -1/EPIPE
+send(fd, buf, len, MSG_NOSIGNAL);           // ✓ 或者单次调用屏蔽</code></pre>
+      </div>
+
+      <h3>3.5 <code>signal</code> vs <code>sigaction</code></h3>
+      <p><strong>用 <code>sigaction</code></strong>，别用 <code>signal</code>：后者在不同系统上语义不一致（是否自动重置 handler、是否自动重启被打断的系统调用都不确定）。</p>
+      <pre class="answer-code-block"><code>struct sigaction sa{};
+sa.sa_handler = handler;
+sigemptyset(&amp;sa.sa_mask);
+sa.sa_flags = SA_RESTART;        // 被打断的慢系统调用自动重启
+sigaction(SIGTERM, &amp;sa, nullptr);</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p>信号是异步打断，可能停在任意指令上，所以 handler 里只能调异步信号安全函数，绝不能 <code>malloc</code>/<code>printf</code>/加锁。工程做法是 handler 只设 <code>volatile sig_atomic_t</code> 标志或 <code>write</code> 一个字节，真正的处理放回主循环；多线程用 <code>signalfd</code> 或专用 <code>sigwait</code> 线程。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="core">
+      <h2>4. core dump · 飞机的黑匣子</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>进程崩溃的那一瞬间，内核把它的<strong>内存镜像 + 寄存器 + 调用栈 + 线程状态</strong>整个 dump 成一个文件 —— 相当于案发现场被整个封存下来，包括每个人当时站在哪、手里拿着什么。你可以事后用 gdb 走进这个「凝固的现场」慢慢勘察。</p>
+      </div>
+
+      <p>哪些信号会产生 core：<code>SIGSEGV</code>、<code>SIGABRT</code>、<code>SIGBUS</code>、<code>SIGFPE</code>、<code>SIGILL</code>、<code>SIGQUIT</code>。</p>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">注意</span>
+        <p><code>SIGKILL</code>（包括 OOM Killer）<strong>不产生 core</strong> —— 所以「进程没了但没有 core」通常就是被 <code>kill -9</code> 或 OOM 了。</p>
+      </div>
+
+      <h3>4.1 开启</h3>
+      <pre class="answer-code-block"><code>ulimit -c unlimited                       # 当前 shell 生效（默认往往是 0）
+# 永久：/etc/security/limits.conf 里写 * soft core unlimited
+
+# 控制生成路径和文件名
+cat /proc/sys/kernel/core_pattern
+echo "/var/cores/core.%e.%p.%t" &gt; /proc/sys/kernel/core_pattern
+#   %e=程序名  %p=pid  %t=时间戳  %s=信号  %h=主机名</code></pre>
+      <p>编译时<strong>必须带 <code>-g</code></strong>。Release 版本也应该 <code>-O2 -g</code>（调试信息不影响运行速度，只是文件变大），千万<strong>不要 strip</strong>。</p>
+
+      <h3>4.2 gdb 分析的黄金命令序列</h3>
+      <pre class="answer-code-block"><code>gdb ./my_server /var/cores/core.my_server.1234.1700000000
+
+bt                        # ← 第一件事：看崩在哪个调用栈
+bt full                   # 带上每一帧的局部变量
+info threads              # 有几个线程，崩的是哪个
+thread apply all bt       # ★ 所有线程的栈 —— 查死锁/并发问题必用
+
+frame 2                   # 切到第 2 帧
+info locals               # 这一帧的局部变量
+info args                 # 参数
+p order                   # 打印变量
+p *ptr                    # 解引用看内容
+
+x/16xb ptr                # 按字节看内存
+info registers            # 寄存器
+disassemble               # 汇编（优化后代码对不上行号时用）</code></pre>
+
+      <h3>4.3 崩溃现象 → 原因速查</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>现象</th><th>常见原因</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>bt</code> 显示地址是 <code>0x0</code> 附近</td><td><strong>空指针解引用</strong></td></tr>
+            <tr><td>地址是很小的数（如 <code>0x8</code>）</td><td>空指针访问成员（<code>0x8</code> = 第二个字段的偏移）</td></tr>
+            <tr><td>栈里全是 <code>??</code> 或乱码</td><td><strong>栈被写坏</strong>（数组越界、栈溢出）；用 <code>-fsanitize=address</code> 复现</td></tr>
+            <tr><td><code>free(): invalid pointer</code> / <code>double free</code></td><td>重复释放、释放非堆指针、堆越界写坏了元数据</td></tr>
+            <tr><td>崩在 <code>std::string</code> / <code>vector</code> 内部</td><td>多半是<strong>用了已析构的对象</strong>或迭代器失效</td></tr>
+            <tr><td>崩在 <code>pthread_mutex_lock</code></td><td>锁对象已被销毁，或对象已释放</td></tr>
+            <tr><td><code>bt</code> 只有一帧、无栈</td><td>栈溢出（无限递归）或 <code>-fomit-frame-pointer</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>4.4 大内存进程的问题</h3>
+      <p>全内存柜台可能占几十 GB，dump 一次要写几十 GB，磁盘和时间都扛不住。</p>
+      <pre class="answer-code-block"><code># 方案1：core_pattern 走管道，边生成边压缩
+echo "|/usr/bin/gzip -1 &gt; /var/cores/core-%e-%p.gz" &gt; /proc/sys/kernel/core_pattern
+
+# 方案2：排除不需要的内存段（比如巨大的数据缓存）
+echo 0x33 &gt; /proc/self/coredump_filter
+# 或者代码里对特定区域调 madvise(addr, len, MADV_DONTDUMP)</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p>core 是崩溃瞬间的进程内存快照。要能用得先 <code>ulimit -c unlimited</code> + 编译带 <code>-g</code> 不 strip；分析时先 <code>bt</code> 看栈，再 <code>thread apply all bt</code> 看所有线程，配合 <code>info locals</code>/<code>p</code> 定位。被 <code>kill -9</code> 和 OOM Killer 杀掉不会有 core。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="oom">
+      <h2>5. OOM · 救生艇超载，直接扔人</h2>
+
+      <h3>5.1 先理解 overcommit：<code>malloc</code> 成功是一张空头支票</h3>
+      <pre class="answer-code-block"><code>void* p = malloc(100L * 1024 * 1024 * 1024);   // 申请 100GB
+if (p) { /* 居然成功了！机器只有 16GB */ }
+
+memset(p, 0, ...);   // ← 真正写的时候才崩</code></pre>
+      <div class="guide-ascii">malloc 成功  =  内核给了你一段【虚拟地址空间】的欠条
+                （只改了页表映射，一个物理页都没给）
+
+第一次写某一页  →  触发缺页中断  →  这时才真正分配【物理内存】</div>
+      <p>理由是大多数程序申请了内存并不会全用（比如 <code>fork</code> 之后的写时复制）。<strong>后果</strong>：内存真的不够时，<strong>不是 <code>malloc</code> 返回 NULL</strong>，而是<strong>运行到一半突然被杀</strong>。</p>
+      <pre class="answer-code-block"><code>cat /proc/sys/vm/overcommit_memory
+#  0 = 启发式判断（默认）
+#  1 = 永远答应
+#  2 = 严格模式：超过 swap + RAM*overcommit_ratio 就直接失败（此时才会 bad_alloc）</code></pre>
+
+      <h3>5.2 OOM Killer</h3>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>救生艇超载了，船长必须扔一个人下去保住其他人。扔谁？按「评分」选 —— 谁占的地方最大、谁最不重要，就扔谁。</p>
+      </div>
+      <p>评分规则（<code>oom_score</code>）大致是：<strong>占用内存越多分越高</strong>，再叠加 <code>oom_score_adj</code> 的人工修正。</p>
+      <pre class="answer-code-block"><code>cat /proc/&lt;pid&gt;/oom_score          # 当前评分
+cat /proc/&lt;pid&gt;/oom_score_adj      # 人工调整：-1000 ~ +1000
+
+echo -1000 &gt; /proc/&lt;pid&gt;/oom_score_adj   # -1000 = 永不被杀（谨慎使用）
+echo 1000  &gt; /proc/&lt;pid&gt;/oom_score_adj   # 优先杀我（适合可重启的辅助进程）</code></pre>
+      <p>被选中的进程收到 <strong><code>SIGKILL</code></strong> —— 捕获不了、清理不了、<strong>没有 core</strong>。</p>
+
+      <h3>5.3 怎么确认「我是被 OOM 杀的」</h3>
+      <pre class="answer-code-block"><code>dmesg -T | grep -i -E "killed process|out of memory"
+# Out of memory: Killed process 12345 (my_server) total-vm:... anon-rss:...
+
+journalctl -k | grep -i oom              # systemd 系统
+cat /var/log/messages | grep -i oom      # 老系统
+
+# 容器里
+cat /sys/fs/cgroup/memory/memory.failcnt
+dmesg | grep -i "memory cgroup out of memory"</code></pre>
+      <p><strong>症状特征</strong>：进程「无声无息就没了」，日志没有任何异常，也没有 core 文件 —— 这就是典型的 OOM 或 <code>kill -9</code>。</p>
+
+      <h3>5.4 三种「内存不够」要分清（高频追问）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>现象</th><th>原因</th><th>表现</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>std::bad_alloc</code></td><td>分配器要不到虚拟地址空间（32 位耗尽 / <code>overcommit=2</code> / 超 <code>ulimit -v</code>）</td><td><strong>能捕获</strong>，程序有机会优雅处理</td></tr>
+            <tr><td><strong>OOM Killer</strong></td><td>整机物理内存 + swap 耗尽</td><td><code>SIGKILL</code>，无 core，<code>dmesg</code> 有记录</td></tr>
+            <tr><td><strong>cgroup OOM</strong></td><td>容器超过 <code>memory.limit_in_bytes</code></td><td>只杀容器内进程，宿主机没事</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">容器场景特别注意</span>
+        <p>容器里的进程看到的 <code>/proc/meminfo</code> 是<strong>宿主机的</strong>，所以你的程序以为有 128GB，其实 limit 只给了 2GB —— JVM、Go 和自己写的内存池都容易在这栽跟头。</p>
+      </div>
+
+      <h3>5.5 生产环境怎么防</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>措施</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>启动时预分配 + <code>mlockall</code></strong></td><td>一次性把要用的内存申请好、写一遍（touch）、锁住不换出，避免运行期才发现不够</td></tr>
+            <tr><td><strong>关掉 swap</strong></td><td>低延迟系统必做，swap 一旦发生延迟就是毫秒级</td></tr>
+            <tr><td><strong>监控 RSS 而不是 VSZ</strong></td><td><code>VSZ</code> 是虚拟地址（含没用的欠条），<strong><code>RSS</code> 才是真实占用的物理内存</strong></td></tr>
+            <tr><td>设置 <code>oom_score_adj</code></td><td>核心交易进程调低，辅助进程调高</td></tr>
+            <tr><td>cgroup 限额 + 告警</td><td>提前在 80% 就告警，别等被杀</td></tr>
+            <tr><td>排查内存增长</td><td><code>valgrind --leak-check=full</code>、<code>-fsanitize=address</code>、<code>heaptrack</code>、<code>pmap -x &lt;pid&gt;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p>Linux 默认 overcommit，<code>malloc</code> 成功只是拿到虚拟地址的欠条，第一次写才真正分配物理页；所以内存耗尽时表现为<strong>运行中被 OOM Killer 用 <code>SIGKILL</code> 杀掉</strong>，而不是 <code>malloc</code> 返回失败。因为是 <code>SIGKILL</code>，所以无法捕获、没有 core，只能靠 <code>dmesg</code> 确认。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="cheatsheet">
+      <h2>6. 一页速记</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>主题</th><th>一句话</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>epoll</strong></td><td>红黑树常驻注册 + 就绪回调链表，复杂度与连接数无关；ET 必须配非阻塞 + 循环读到 <code>EAGAIN</code></td></tr>
+            <tr><td><strong>mmap</strong></td><td>把文件/匿名内存映射进地址空间，省掉一次拷贝；坑在<strong>缺页中断延迟不可控</strong>，要 <code>MAP_POPULATE</code> + <code>mlock</code> 预热</td></tr>
+            <tr><td><strong>信号</strong></td><td>异步打断，handler 里只能调异步信号安全函数；工程做法是只设标志 / <code>signalfd</code> / 专用 <code>sigwait</code> 线程</td></tr>
+            <tr><td><strong>core dump</strong></td><td>崩溃瞬间的内存快照；<code>ulimit -c unlimited</code> + <code>-g</code> 不 strip；<code>bt</code> → <code>thread apply all bt</code> → <code>info locals</code></td></tr>
+            <tr><td><strong>OOM</strong></td><td>overcommit 让 <code>malloc</code> 成为空头支票，真正写才给物理页；耗尽时被 <code>SIGKILL</code> 杀，<strong>无 core</strong>，查 <code>dmesg</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20Linux%E4%B8%8E%E8%B0%83%E8%AF%95">去刷 Linux 与调试题</a>
+        <a class="secondary-button" href="./cpp-memory-perf-notes.html">上一篇：内存与性能</a>
+        <a class="secondary-button" href="./hundsun-uf3-guide.html">UF3.0 完整文档</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记，可与「内存与性能」「并发与线程」「容器与智能指针」配合阅读。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./cpp-modern-notes.html">C++ 核心笔记</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>

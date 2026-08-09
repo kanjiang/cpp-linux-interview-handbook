@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C++ 并发形象笔记 · 互斥量/临界区/线程函数/锁/信号量/future</title>
+  <meta name="description" content="用单人卫生间比喻讲清互斥量，教你怎么划定临界区边界；并系统整理 std::thread 处理函数、defer_lock 与 std::lock 防死锁、shared_mutex 读写锁、信号量、swap、join 之后的状态、future 与 decltype。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">C++ Concurrency</p>
+        <h1>并发与线程 · 形象笔记</h1>
+        <p>互斥量是「只有一把钥匙的门锁」，临界区是「门里的那段时间」。从这个比喻出发，讲清临界区怎么划、线程有哪些处理函数、锁怎么选、信号量做什么、<code>join</code> 之后发生了什么、<code>future</code> 和 <code>decltype</code> 为什么存在。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20%E5%B9%B6%E5%8F%91%E4%B8%8E%E8%BF%9B%E7%A8%8B">刷并发与进程题</a>
+          <a class="secondary-button" href="./cpp-containers-notes.html">容器与智能指针</a>
+          <a class="secondary-button" href="./cpp-value-semantics.html">拷贝与移动</a>
+          <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>
+          <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#mutex">1. 什么叫互斥量（形象版）</a></li>
+        <li><a href="#critical">2. 临界区的起点和终点怎么定</a></li>
+        <li><a href="#thread-api">3. 线程处理函数全览</a></li>
+        <li><a href="#join">4. <code>join()</code> 之后线程是什么状态</a></li>
+        <li><a href="#locks">5. 锁的家族：tag、<code>std::lock</code>、尝试加锁</a></li>
+        <li><a href="#shared-mutex">6. <code>shared_mutex</code> 读写锁</a></li>
+        <li><a href="#semaphore">7. 信号量 / latch / barrier</a></li>
+        <li><a href="#swap">8. <code>swap(other)</code> 的含义</a></li>
+        <li><a href="#future">9. <code>future</code> 是什么</a></li>
+        <li><a href="#decltype">10. 为什么需要 <code>decltype</code></a></li>
+        <li><a href="#cheatsheet">11. 一页速记</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="mutex">
+      <h2>1. 什么叫互斥量（形象版）</h2>
+      <div class="guide-callout is-key">
+        <span class="callout-label">一句话</span>
+        <p><strong>互斥量（mutex）＝ 只有一把钥匙的门锁。谁拿到钥匙谁进屋，其他人在门口排队等。</strong>名字来自 <strong>mut</strong>ual <strong>ex</strong>clusion（互相排斥）。</p>
+      </div>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻：机场的单人卫生间</span>
+        <p>① 甲走过去，门开着 → 进去，反锁（<code>lock()</code>）；② 乙走过来，门锁着 → 在门口等（阻塞）；③ 甲办完事，开锁出来（<code>unlock()</code>）；④ 乙进去，反锁……</p>
+      </div>
+
+      <div class="guide-ascii">        ┌─────────────┐
+        │   卫生间     │  ← 共享数据（同一时刻只能一个人用）
+        │  (共享数据)  │
+        └──────┬──────┘
+               │ 🔒 门锁          ← mutex
+               │
+    😀 😐 😑 😠  ← 排队的线程</div>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>现实</th><th>代码</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>卫生间</td><td>共享数据（<code>balance</code>、<code>queue</code>、<code>map</code>…）</td></tr>
+            <tr><td>门锁</td><td><code>std::mutex</code></td></tr>
+            <tr><td>反锁进门</td><td><code>mtx.lock()</code></td></tr>
+            <tr><td>开锁出门</td><td><code>mtx.unlock()</code></td></tr>
+            <tr><td>在门口等</td><td>线程阻塞</td></tr>
+            <tr><td>门里的那段时间</td><td><strong>临界区</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>1.1 不加锁会怎样？<code>count++</code> 的真相</h3>
+      <p>你以为 <code>count++</code> 是一步，其实 CPU 要做<strong>三步</strong>：读进寄存器 → 加 1 → 写回内存。两个线程同时执行时可能这样交错：</p>
+      <div class="guide-ascii">初始 count = 100
+
+时间 →
+线程A:  读到100  ┄┄┄┄┄┄┄┄┄  改成101   写回101
+线程B:  ┄┄┄┄┄  读到100   改成101  ┄┄┄┄┄  写回101
+                                              ↓
+                            最终 count = 101（应该是 102！）</div>
+      <p><strong>丢了一次更新</strong>，这就是<strong>数据竞争（data race）</strong>—— 相当于两个人同时挤进同一个隔间，互相把对方的事搅黄了。加锁之后，A 的「读-改-写」三步走完之前，B 根本进不来。</p>
+
+      <h3>1.2 最反直觉的一点：锁保护的不是数据，是「约定」</h3>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">高频考点</span>
+        <pre class="answer-code-block"><code>std::mutex mtx;
+int balance = 0;
+
+void safeAdd()   { std::lock_guard&lt;std::mutex&gt; lk(mtx); balance += 100; }  // 守规矩
+void sneakyAdd() { balance += 100; }   // ✗ 没加锁，但编译器【一句话都不会说】</code></pre>
+        <p><code>mtx</code> 和 <code>balance</code> 之间<strong>没有任何语法上的绑定关系</strong>。比喻：<strong>门锁只锁得住走门的人，有人翻窗户进去，锁一点办法都没有。</strong></p>
+      </div>
+      <p>所以互斥量是一个<strong>君子协定</strong> —— 全体代码约定好「碰 <code>balance</code> 之前先拿 <code>mtx</code>」，只要有一处忘了，保护就整体失效。正确做法是<strong>把数据和锁封装进类里</strong>，让外人根本没有「翻窗户」的机会：</p>
+      <pre class="answer-code-block"><code>class Account {
+public:
+    void add(int n) {
+        std::lock_guard&lt;std::mutex&gt; lk(mtx_);   // 唯一的门
+        balance_ += n;
+    }
+    int get() const {
+        std::lock_guard&lt;std::mutex&gt; lk(mtx_);
+        return balance_;
+    }
+private:
+    mutable std::mutex mtx_;    // const 方法里要加锁 → mutex 必须 mutable
+    int balance_ = 0;           // private，外面碰不到 → 没有窗户可翻
+};</code></pre>
+      <p><strong>一份数据配一把锁，并且写在一起</strong> —— 这是使用互斥量的第一原则。</p>
+
+      <h3>1.3 第二个关键性质：所有权（谁锁谁开）</h3>
+      <pre class="answer-code-block"><code>// 线程A
+mtx.lock();
+// 线程B
+mtx.unlock();   // ✗ 未定义行为！B 没锁过，凭什么解锁</code></pre>
+      <p>比喻：钥匙在甲手里，乙不能替甲开门。推论是<strong>同一个线程重复上锁会把自己锁死</strong> —— 你在卫生间里，又想进这个卫生间一次，等于在等你自己出来。真需要重入就用 <code>std::recursive_mutex</code>（但通常说明设计有问题）。</p>
+
+      <h3>1.4 为什么要用 <code>lock_guard</code> 而不是手动 lock/unlock</h3>
+      <pre class="answer-code-block"><code>void bad() {
+    mtx.lock();
+    if (x &lt; 0) return;      // ✗ 提前 return，忘了解锁 → 全场卡死
+    doSomething();          // ✗ 这里抛异常，也永远解不了锁
+    mtx.unlock();
+}
+
+void good() {
+    std::lock_guard&lt;std::mutex&gt; lk(mtx);   // 构造 = 锁门
+    if (x &lt; 0) return;                     // ✓ lk 析构，自动解锁
+    doSomething();                         // ✓ 抛异常栈展开，也自动解锁
+}                                          // ✓ 正常结束，自动解锁</code></pre>
+      <p>手动版的比喻：你进了卫生间，突然接到电话从<strong>窗户</strong>跑了，门还反锁着 —— 后面所有人永远进不去。RAII 相当于<strong>给门装了自动闭合弹簧</strong>。</p>
+
+      <h3>1.5 常见误区澄清</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>误解</th><th>真相</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>加了锁数据就安全了</td><td>只有<strong>所有</strong>访问路径都加锁才安全，漏一处等于没加</td></tr>
+            <tr><td>锁保护的是变量</td><td>锁保护的是<strong>一段代码</strong>（临界区），和变量靠约定关联</td></tr>
+            <tr><td>锁越多越安全</td><td>多把锁 + 不同顺序＝<strong>死锁</strong>；锁范围过大＝性能崩</td></tr>
+            <tr><td>lock 失败会返回错误</td><td><code>lock()</code> <strong>不会失败</strong>，只会一直等；想不等用 <code>try_lock()</code></td></tr>
+            <tr><td>读数据不用加锁</td><td>只要有人<strong>写</strong>，读也必须加锁，否则可能读到「半个」值</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="critical">
+      <h2>2. 临界区的起点和终点怎么定</h2>
+      <div class="guide-callout is-key">
+        <span class="callout-label">结论</span>
+        <p>临界区不是语言给你的，编译器也不知道它在哪 —— <strong>是你自己划的</strong>。依据只有一条：<strong>从「共享数据的不变量被破坏」开始，到「不变量重新成立」结束。</strong></p>
+      </div>
+
+      <h3>2.1 代码层面：边界看得见</h3>
+      <pre class="answer-code-block"><code>void deposit(int n) {
+    std::lock_guard&lt;std::mutex&gt; lk(mtx);   // ← 临界区开始（构造 = lock）
+    balance += n;
+}                                          // ← 临界区结束（析构 = unlock）</code></pre>
+      <p><code>lock_guard</code> 的生命周期 = 临界区范围。想<strong>精确控制边界</strong>，就用花括号显式框出来：</p>
+      <pre class="answer-code-block"><code>void handleOrder(const Order&amp; o) {
+    auto msg = parse(o);          // 不碰共享数据，在锁外
+
+    {
+        std::lock_guard&lt;std::mutex&gt; lk(mtx);
+        orderTable[o.id] = msg;   // ← 只有这一行碰共享数据
+    }                             // ← 锁在这里就放掉了
+
+    sendToExchange(msg);          // 耗时 I/O，绝不能在锁里
+}</code></pre>
+      <p>不加这对花括号，锁会一直持有到函数结尾，把 <code>sendToExchange</code> 这种慢操作也圈进去 —— 功能正确，但吞吐会崩。</p>
+
+      <h3>2.2 逻辑层面：哪些代码该进去</h3>
+      <p><strong>第 1 步：找出「共享 + 可变」的数据。</strong>三个条件同时满足才需要保护：会被多个线程访问、至少有一个线程写、不是原子操作。只读常量、线程私有的局部变量、<code>thread_local</code> 都不需要锁。</p>
+      <p><strong>第 2 步：找出「不变量」（invariant）</strong>，也就是「这份数据在正常状态下必须成立的性质」。比如双向链表的不变量是「每个节点的 <code>next-&gt;prev == 自己</code>」：</p>
+      <pre class="answer-code-block"><code>newNode-&gt;next = cur-&gt;next;
+newNode-&gt;prev = cur;
+cur-&gt;next-&gt;prev = newNode;   // ← 这几步中间，不变量是【被破坏】的
+cur-&gt;next = newNode;         // ← 到这里才恢复</code></pre>
+      <p><strong>临界区必须完整覆盖「破坏 → 恢复」的整个过程</strong>。此时若别的线程闯进来遍历链表，看到的就是一个断裂的结构。这个标准比「哪一行写了变量」更本质。</p>
+
+      <h3>2.3 划错的两种典型错误</h3>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">错误 A：划太小 —— check-then-act 竞态</span>
+        <pre class="answer-code-block"><code>// 错误写法
+if (!queue.empty()) {          // 临界区①：检查
+    auto item = queue.front();  // 临界区②：取用
+    queue.pop();
+}</code></pre>
+        <p>即使 <code>empty()</code>、<code>front()</code>、<code>pop()</code> <strong>每一个内部都加了锁</strong>，整体依然是错的 —— ①和②之间锁被放掉了，别的线程可能刚好把最后一个元素 pop 走，于是你对空队列调用 <code>front()</code>。</p>
+        <p><strong>判据：只要一段逻辑是「先判断状态，再依据判断结果操作」，这两步之间就不能放锁。</strong></p>
+      </div>
+      <pre class="answer-code-block"><code>bool tryPop(T&amp; out) {
+    std::lock_guard&lt;std::mutex&gt; lk(mtx);
+    if (queue.empty()) return false;
+    out = std::move(queue.front());
+    queue.pop();
+    return true;
+}</code></pre>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">错误 B：划太大 —— 性能塌方 / 死锁</span>
+        <pre class="answer-code-block"><code>// 不好
+std::lock_guard&lt;std::mutex&gt; lk(mtx);
+auto data = table[id];
+writeToDisk(data);        // 几毫秒的 I/O，全程占着锁
+notifyUser(callback);     // 调用外部回调，它可能再去抢别的锁 → 死锁
+
+// 改成
+Data data;
+{
+    std::lock_guard&lt;std::mutex&gt; lk(mtx);
+    data = table[id];     // 只把共享数据【拷】出来
+}
+writeToDisk(data);        // 锁外做慢活
+notifyUser(callback);</code></pre>
+        <p><strong>两条硬规则</strong>：锁内不做 I/O、不做内存分配、不做长计算；锁内绝不调用用户提供的回调 / 虚函数（你不知道它会去锁什么，是死锁高发区）。</p>
+      </div>
+
+      <h3>2.4 条件变量下的临界区（断开又接上）</h3>
+      <pre class="answer-code-block"><code>std::unique_lock&lt;std::mutex&gt; lk(mtx);          // 临界区开始
+
+cv.wait(lk, []{ return !queue.empty(); });     // 等待期间：锁被放开，别人可以进
+                                               // 返回时：锁已重新持有
+auto item = queue.front();                     // 临界区继续
+queue.pop();
+
+lk.unlock();                                   // 可以提前手动结束
+process(item);                                 // 锁外处理</code></pre>
+      <p>这也是 <code>wait</code> 必须用 <code>unique_lock</code> 而不能用 <code>lock_guard</code> 的原因 —— 它需要中途 unlock/lock 的能力，而 <code>lock_guard</code> 没有这些成员函数。</p>
+
+      <h3>2.5 更好的做法：把边界封装掉</h3>
+      <p>不要让调用方自己判断临界区在哪，<strong>让数据结构自己保证线程安全</strong>。接口设计原则：<strong>对外暴露的每个函数本身就是一个完整的临界区，调用方无论怎么组合都不会出竞态。</strong></p>
+      <p>这也解释了为什么标准库不提供线程安全的 <code>std::queue</code> —— 因为 <code>empty</code> / <code>front</code> / <code>pop</code> 这套接口天生无法做到线程安全，必须重新设计接口。</p>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">实操判定流程</span>
+        <ol>
+          <li>这段代码碰了哪些数据？逐个标记：私有的 / 只读的 / 共享可写的</li>
+          <li>共享可写的那些，用哪把锁保护？一份数据配一把明确的锁，写在注释里</li>
+          <li>数据从哪一行开始处于「中间态」，到哪一行恢复一致？这就是最小边界</li>
+          <li>有没有「先查后用」？有就必须合并进同一个临界区</li>
+          <li>边界内有没有慢操作或外部回调？有就挪出去</li>
+        </ol>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="thread-api">
+      <h2>3. 线程处理函数全览</h2>
+
+      <h3>3.1 <code>std::thread</code> 成员函数（<code>&lt;thread&gt;</code>）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>函数</th><th>作用</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>thread(f, args...)</code></td><td>构造并<strong>立即启动</strong>线程</td></tr>
+            <tr><td><code>join()</code></td><td>阻塞等待线程结束并回收</td></tr>
+            <tr><td><code>detach()</code></td><td>分离，线程后台自生自灭；之后不能再 join</td></tr>
+            <tr><td><code>joinable()</code></td><td>是否还关联着一个未 join/detach 的线程</td></tr>
+            <tr><td><code>get_id()</code></td><td>返回 <code>std::thread::id</code></td></tr>
+            <tr><td><code>native_handle()</code></td><td>拿底层句柄（Linux 上常是 <code>pthread_t</code>）</td></tr>
+            <tr><td><code>swap(other)</code></td><td>交换两个 thread 对象管理的线程</td></tr>
+            <tr><td><code>operator=</code>（移动）</td><td>转移线程所有权，<strong>不可拷贝</strong></td></tr>
+            <tr><td><code>hardware_concurrency()</code></td><td><strong>静态</strong>函数，返回建议并发数（≈逻辑核数，仅供参考）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">最容易踩的坑</span>
+        <p><code>std::thread</code> 析构时若仍 <code>joinable()</code>，直接 <code>std::terminate</code> 终止进程。标准这么设计是<strong>故意的</strong> —— 与其让你在「静默 detach」和「静默阻塞」之间猜，不如立刻崩给你看。</p>
+      </div>
+
+      <h3>3.2 <code>std::this_thread</code> 命名空间</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>函数</th><th>作用</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>get_id()</code></td><td>当前线程 id</td></tr>
+            <tr><td><code>yield()</code></td><td>提示调度器让出 CPU（自旋等待里常用）</td></tr>
+            <tr><td><code>sleep_for(dur)</code></td><td>睡一段时长</td></tr>
+            <tr><td><code>sleep_until(tp)</code></td><td>睡到某个时间点</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.3 <code>std::jthread</code>（C++20）</h3>
+      <p><code>std::thread</code> 的改进版，解决两个痛点：<strong>析构自动 join</strong>（不会因为忘记 join 而 terminate）、<strong>协作式取消</strong>（支持 <code>stop_token</code>）。</p>
+      <pre class="answer-code-block"><code>std::jthread t([](std::stop_token st) {
+    while (!st.stop_requested()) {
+        doWork();
+    }
+});
+// 析构时自动 request_stop() + join()</code></pre>
+      <p>新增 <code>request_stop()</code> / <code>get_stop_token()</code> / <code>get_stop_source()</code>。<strong>新代码优先用 <code>jthread</code>。</strong></p>
+
+      <h3>3.4 更高层的异步工具（<code>&lt;future&gt;</code>）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>工具</th><th>作用</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>std::async(policy, f, args...)</code></td><td>异步跑一个任务，返回 <code>future</code></td></tr>
+            <tr><td><code>std::future&lt;T&gt;</code></td><td>取结果：<code>get()</code> / <code>wait()</code> / <code>wait_for()</code> / <code>valid()</code></td></tr>
+            <tr><td><code>std::shared_future&lt;T&gt;</code></td><td>可多次 <code>get</code>、可拷贝的 future</td></tr>
+            <tr><td><code>std::promise&lt;T&gt;</code></td><td>手动往 future 里塞值：<code>set_value()</code> / <code>set_exception()</code></td></tr>
+            <tr><td><code>std::packaged_task&lt;F&gt;</code></td><td>把可调用体包成「可异步执行 + 带 future」</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.5 一次性初始化（<code>&lt;mutex&gt;</code>）</h3>
+      <pre class="answer-code-block"><code>std::once_flag flag;
+
+void init() {
+    std::call_once(flag, [] {
+        loadConfig();      // 无论多少线程进来，只跑一次
+    });
+}</code></pre>
+
+      <div class="guide-ascii">最底层：std::thread / jthread     —— 我自己管线程
+中间层：std::async / future        —— 我只关心结果
+同步层：mutex / condition_variable / atomic —— 线程之间怎么协作</div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="join">
+      <h2>4. <code>join()</code> 之后线程是什么状态</h2>
+      <p>要分成<strong>两个东西</strong>来看，这是理解的关键：</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>join 之前</th><th>join 之后</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>操作系统线程</strong></td><td>正在跑 / 已跑完但未回收</td><td><strong>已彻底结束，内核资源全部回收</strong></td></tr>
+            <tr><td><strong><code>std::thread</code> 对象</strong></td><td><code>joinable() == true</code></td><td><strong>变成「空壳」</strong>，<code>joinable() == false</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="answer-code-block"><code>std::thread t(work);
+
+t.join();
+// 1. 阻塞【当前线程】，直到 work() 执行完毕并返回
+// 2. 回收该线程的内核资源（栈、TCB 等）
+// 3. 把 t 置为「不关联任何线程」的状态
+
+assert(!t.joinable());                       // true
+assert(t.get_id() == std::thread::id{});     // 变回默认构造的空 id
+
+t = std::thread(anotherWork);   // ✓ t 这个对象还活着，可以重新赋值
+t.join();
+t.join();                       // ✗ 抛 std::system_error，不能 join 两次</code></pre>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th><code>join()</code></th><th><code>detach()</code></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>当前线程</td><td><strong>阻塞等待</strong></td><td>立即返回</td></tr>
+            <tr><td>线程资源何时回收</td><td>join 返回时，<strong>由你回收</strong></td><td>线程自己跑完时，<strong>由运行时回收</strong></td></tr>
+            <tr><td>之后还能拿到结果/异常吗</td><td>能（配合 future）</td><td><strong>不能</strong>，彻底失联</td></tr>
+            <tr><td><code>thread</code> 对象状态</td><td>变空壳</td><td>变空壳</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label"><code>detach</code> 的最大危险：悬空引用</span>
+        <pre class="answer-code-block"><code>void bad() {
+    int local = 42;
+    std::thread t([&amp;] { std::cout &lt;&lt; local; });   // 捕获局部变量的引用
+    t.detach();
+}   // ✗ 函数返回，local 销毁，但线程可能还在跑 → UB</code></pre>
+      </div>
+
+      <p>忘记 join 的解决办法：用 C++20 的 <code>std::jthread</code>，或自己写个 RAII 包装：</p>
+      <pre class="answer-code-block"><code>class ThreadGuard {
+public:
+    explicit ThreadGuard(std::thread t) : t_(std::move(t)) {}
+    ~ThreadGuard() { if (t_.joinable()) t_.join(); }
+
+    ThreadGuard(const ThreadGuard&amp;) = delete;
+    ThreadGuard&amp; operator=(const ThreadGuard&amp;) = delete;
+private:
+    std::thread t_;
+};</code></pre>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="locks">
+      <h2>5. 锁的家族：tag、<code>std::lock</code>、尝试加锁</h2>
+
+      <h3>5.1 先分清：互斥量 ≠ 锁管理器</h3>
+      <pre class="answer-code-block"><code>std::unique_lock&lt;std::mutex&gt; l1(muA, std::defer_lock);
+//                           ↑        ↑
+//                        管理器名   被管理的互斥量</code></pre>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>是什么</th><th>例子</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>std::mutex muA</code></td><td><strong>互斥量本身</strong>，真正的共享资源，通常是成员或全局变量，长期存活</td><td><code>muA</code>、<code>muB</code></td></tr>
+            <tr><td><code>std::unique_lock l1</code></td><td><strong>RAII 管理器</strong>，短命的栈上对象，负责在合适时机 lock/unlock <code>muA</code></td><td><code>l1</code>、<code>l2</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>顺带一提：<code>l1</code> 是小写字母 <strong>L</strong> 加数字 <strong>1</strong>，读作 "lock 1"，是普通变量名。C++ 标识符<strong>不能以数字开头</strong>，<code>11</code> 是非法的。示例代码图省事才这么写，实际建议用有意义的名字如 <code>lockAccount</code>。</p>
+
+      <h3>5.2 三个 tag</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>tag</th><th>含义</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>不传</td><td>构造时<strong>立即加锁</strong>（阻塞直到拿到）</td></tr>
+            <tr><td><code>std::defer_lock</code></td><td><strong>先不加锁</strong>，只接管管理权，之后手动 <code>lock()</code></td></tr>
+            <tr><td><code>std::try_to_lock</code></td><td><strong>尝试</strong>加锁，失败也不阻塞，用 <code>owns_lock()</code> 查结果</td></tr>
+            <tr><td><code>std::adopt_lock</code></td><td>「我<strong>已经</strong>在外面加过锁了」，你只管负责解锁</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>defer_lock</code> 的主要用途就是配合 <code>std::lock</code> —— 因为 <code>std::lock</code> 需要自己控制加锁顺序，所以构造时必须先别锁上。</p>
+
+      <h3>5.3 <code>std::lock</code> 怎么避免死锁</h3>
+      <div class="guide-ascii">死锁是怎么来的：
+
+// 线程 A                    // 线程 B
+lock(muA);                   lock(muB);
+lock(muB);   ← 卡住          lock(muA);   ← 卡住
+
+两边各持有一把、各等对方一把，永久互等。</div>
+      <p>标准只规定 <code>std::lock</code>「用一种避免死锁的算法」，实现上典型是<strong>「全有或全无 + 回退重试」</strong>：</p>
+      <div class="guide-ascii">1. 阻塞式锁住第 1 把
+2. 对剩下的逐个 try_lock
+3. 只要有一把 try_lock 失败：
+     → 把已经拿到的【全部释放】
+     → 以刚才失败的那把作为新的「第 1 把」，回到步骤 1
+4. 全部拿到 → 返回</div>
+      <p>关键在于<strong>失败时立刻全部放手</strong>，不会「攥着一把等另一把」，所以不会形成循环等待。</p>
+      <pre class="answer-code-block"><code>std::unique_lock&lt;std::mutex&gt; l1(muA, std::defer_lock);
+std::unique_lock&lt;std::mutex&gt; l2(muB, std::defer_lock);
+std::lock(l1, l2);      // 要么两把都拿到，要么一直重试，绝不死锁
+
+// C++17 之后：一行搞定，内部就是 std::lock，且自动 RAII
+std::scoped_lock lk(muA, muB);</code></pre>
+      <div class="guide-callout is-key">
+        <span class="callout-label">选择建议</span>
+        <p><strong>新代码优先用 <code>scoped_lock</code></strong>，只有需要 defer / try / 手动 unlock / 配合条件变量这些灵活能力时才用 <code>unique_lock</code>。</p>
+      </div>
+
+      <h3>5.4 「尝试加锁」的几种写法</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>写法</th><th>行为</th><th>返回值</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>mu.try_lock()</code></td><td>立刻返回，不阻塞</td><td><code>bool</code></td></tr>
+            <tr><td><code>unique_lock lk(mu, std::try_to_lock)</code></td><td>同上，包了 RAII</td><td>查 <code>lk.owns_lock()</code></td></tr>
+            <tr><td><code>std::try_lock(l1, l2, l3)</code></td><td>依次 try，失败就把之前的全解开</td><td><code>-1</code> 成功；否则返回<strong>失败者的下标</strong>（从 0 开始）</td></tr>
+            <tr><td><code>tmu.try_lock_for(100ms)</code></td><td>带超时，需 <code>std::timed_mutex</code></td><td><code>bool</code></td></tr>
+            <tr><td><code>tmu.try_lock_until(tp)</code></td><td>等到某时间点</td><td><code>bool</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="answer-code-block"><code>std::unique_lock&lt;std::mutex&gt; lk(mu, std::try_to_lock);
+if (lk.owns_lock()) {
+    // 抢到了，干活
+} else {
+    // 没抢到，干点别的，不阻塞
+}</code></pre>
+      <p>交易系统里 <code>try_lock</code> 常用于「抢不到就走降级路径」，避免主线程被拖住。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="shared-mutex">
+      <h2>6. <code>shared_mutex</code> 读写锁</h2>
+      <p><code>std::shared_mutex</code>（C++17）有<strong>两种加锁模式</strong>，所以既能配 <code>unique_lock</code> 也能配 <code>shared_lock</code> —— 这正是它的设计意图。</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>模式</th><th>用哪个管理器</th><th>底层调用</th><th>语义</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>独占（写）</strong></td><td><code>unique_lock</code> / <code>lock_guard</code> / <code>scoped_lock</code></td><td><code>lock()</code> / <code>unlock()</code></td><td>同一时刻只能有 1 个</td></tr>
+            <tr><td><strong>共享（读）</strong></td><td><code>std::shared_lock</code></td><td><code>lock_shared()</code> / <code>unlock_shared()</code></td><td>可以有<strong>任意多个</strong>同时进</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>规则：<strong>读者之间不互斥，读者和写者互斥，写者和写者互斥。</strong></p>
+      <pre class="answer-code-block"><code>class ConfigStore {
+public:
+    // 读：多个线程可以同时进来
+    std::string get(const std::string&amp; k) const {
+        std::shared_lock&lt;std::shared_mutex&gt; lk(mtx_);
+        auto it = data_.find(k);
+        return it == data_.end() ? "" : it-&gt;second;
+    }
+
+    // 写：独占，此时所有读者都被挡在外面
+    void set(const std::string&amp; k, std::string v) {
+        std::unique_lock&lt;std::shared_mutex&gt; lk(mtx_);
+        data_[k] = std::move(v);
+    }
+
+private:
+    mutable std::shared_mutex mtx_;
+    std::unordered_map&lt;std::string, std::string&gt; data_;
+};</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">别无脑用（面试爱追问）</span>
+        <ul>
+          <li>内部维护读者计数，<strong>单次加解锁开销比普通 <code>mutex</code> 大</strong></li>
+          <li>只有「<strong>读远多于写</strong> + 临界区<strong>足够长</strong>」时才划算；临界区很短时普通 <code>mutex</code> 甚至 <code>atomic</code> 反而更快</li>
+          <li>可能有<strong>写者饥饿</strong>（读者源源不断，写者一直排不上），标准未规定公平性</li>
+          <li>不能从 <code>shared_lock</code> <strong>升级</strong>成 <code>unique_lock</code>（标准不提供，硬做会死锁）</li>
+        </ul>
+      </div>
+      <p>相关类型还有 <code>std::shared_timed_mutex</code>（C++14，多了 <code>try_lock_for</code> 等超时接口）。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="semaphore">
+      <h2>7. 信号量 / latch / barrier</h2>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>信号量本质是一个<strong>带阻塞能力的计数器</strong>，像是「一叠许可证」：计数 &gt; 0 → <code>acquire()</code> 立即拿走一张；计数为 0 → <code>acquire()</code> 阻塞，直到别人 <code>release()</code> 还回来一张。</p>
+      </div>
+      <pre class="answer-code-block"><code>#include &lt;semaphore&gt;
+
+std::counting_semaphore&lt;10&gt; sem(3);   // 模板参数=最大可能值，构造参数=初始值
+
+sem.acquire();     // 拿一个「许可证」，没有就等
+doWork();
+sem.release();     // 还回去，唤醒一个等待者</code></pre>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>成员函数</th><th>作用</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>acquire()</code></td><td>阻塞获取一个</td></tr>
+            <tr><td><code>try_acquire()</code></td><td>非阻塞尝试</td></tr>
+            <tr><td><code>try_acquire_for(dur)</code> / <code>try_acquire_until(tp)</code></td><td>带超时</td></tr>
+            <tr><td><code>release(n = 1)</code></td><td>释放 n 个，唤醒等待者</td></tr>
+            <tr><td><code>max()</code></td><td>静态，返回最大计数</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>std::binary_semaphore</code> 就是 <code>counting_semaphore&lt;1&gt;</code> 的别名。</p>
+
+      <h3>7.1 和 mutex 最关键的区别：没有「所有权」</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th><code>std::mutex</code></th><th>semaphore</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>所有权</td><td>有，<strong>谁 lock 谁 unlock</strong>，别人解是 UB</td><td>无，<strong>A 线程 acquire，B 线程 release 完全合法</strong></td></tr>
+            <tr><td>计数</td><td>只有 0/1</td><td>任意 N</td></tr>
+            <tr><td>递归</td><td>同线程重复 lock 是 UB</td><td>只是继续消耗计数</td></tr>
+            <tr><td>用途</td><td>保护临界区</td><td>限流、资源池、线程间<strong>信号通知</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>正因为没有所有权，信号量能做 mutex 做不到的事 —— <strong>跨线程通知</strong>。</p>
+
+      <h3>7.2 两个典型用途</h3>
+      <pre class="answer-code-block"><code>// A. 限流 / 连接池：最多 3 个线程同时访问数据库
+std::counting_semaphore&lt;3&gt; dbSlots(3);
+
+void query() {
+    dbSlots.acquire();
+    runQuery();
+    dbSlots.release();
+}
+
+// B. 生产者-消费者
+std::counting_semaphore&lt;1000&gt; items(0);   // 初始 0 个商品
+
+void producer() {
+    queue.push(x);
+    items.release();       // 商品 +1，唤醒一个消费者
+}
+void consumer() {
+    items.acquire();       // 没商品就等
+    auto x = queue.pop();
+}</code></pre>
+      <p>⚠️ 注意：<code>queue</code> 本身还是要另配 mutex 保护，信号量只负责「有没有」的计数通知。</p>
+
+      <h3>7.3 <code>latch</code> 与 <code>barrier</code>（C++20）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>工具</th><th>语义</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>std::latch</code></td><td><strong>一次性</strong>倒计时门闩，<code>count_down()</code> 到 0 时所有 <code>wait()</code> 放行，不可重置</td></tr>
+            <tr><td><code>std::barrier</code></td><td><strong>可重复</strong>的集合点，N 个线程都到齐才一起放行，然后自动重置进入下一轮</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="answer-code-block"><code>std::latch startGate(1);
+
+// 工作线程
+startGate.wait();       // 全部卡在这里
+// 主线程
+startGate.count_down(); // 一声令下，全部同时开跑</code></pre>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="swap">
+      <h2>8. <code>swap(other)</code> 的用法与含义</h2>
+      <p><strong>通用含义</strong>：交换两个对象的内部状态，而且是<strong>廉价</strong>的 —— 只换指针/句柄，不做深拷贝。</p>
+      <pre class="answer-code-block"><code>std::thread t1(taskA);
+std::thread t2(taskB);
+
+t1.swap(t2);      // 或 std::swap(t1, t2);
+// 现在 t1 管理着原来跑 taskB 的那个线程，t2 管理跑 taskA 的</code></pre>
+      <div class="guide-callout is-key">
+        <span class="callout-label">关键理解</span>
+        <p>它交换的是<strong>「线程句柄的所有权」，不是线程本身</strong>。操作系统里那两个线程照常跑，一秒都没停，只是 C++ 对象和它们的对应关系换了一下。<code>unique_lock</code>、<code>unique_ptr</code>、<code>shared_ptr</code> 的 <code>swap</code> 同理 —— 交换的都是所有权。</p>
+      </div>
+
+      <h3>为什么标准库到处都有 <code>swap</code></h3>
+      <p><strong>A. 它是 <code>noexcept</code> 的</strong>，所以是实现「强异常安全」的基石。经典的 copy-and-swap 惯用法：</p>
+      <pre class="answer-code-block"><code>class Buffer {
+public:
+    Buffer&amp; operator=(Buffer other) {   // 注意：按值传参，拷贝在这里发生
+        swap(other);                     // 只交换，绝不会抛异常
+        return *this;
+    }                                    // other 析构，带走旧数据
+
+    void swap(Buffer&amp; o) noexcept {
+        std::swap(data_, o.data_);
+        std::swap(size_, o.size_);
+    }
+private:
+    char* data_;
+    size_t size_;
+};</code></pre>
+      <p>如果拷贝时抛异常，那是在进入函数<strong>之前</strong>发生的，<code>*this</code> 完全没被动过 —— 要么全成功，要么原样不变。</p>
+      <p><strong>B. 收缩容器内存的惯用法</strong>（C++11 之前）：<code>std::vector&lt;int&gt;(v).swap(v);</code>，现在直接用 <code>v.shrink_to_fit()</code>。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="future">
+      <h2>9. <code>std::future</code> 是什么</h2>
+      <div class="guide-callout is-key">
+        <span class="callout-label">一句话定义</span>
+        <p><code>std::future&lt;T&gt;</code> 是一个<strong>「将来才会有值」的占位符</strong>，代表某个异步操作结果的<strong>读取端</strong>。</p>
+      </div>
+
+      <h3>9.1 核心概念：共享状态</h3>
+      <p><code>future</code> 从不单独存在，它总是和一个<strong>写入端</strong>配对，两者共享一块堆上的「共享状态」：</p>
+      <div class="guide-ascii">       写入端                 共享状态                读取端
+  ┌──────────────┐      ┌───────────────┐      ┌──────────────┐
+  │ promise      │      │ 值 or 异常    │      │              │
+  │ packaged_task│ ───→ │ 是否就绪      │ ───→ │ future&lt;T&gt;    │
+  │ async        │      │ 等待队列      │      │              │
+  └──────────────┘      └───────────────┘      └──────────────┘
+   set_value()                                     get()</div>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>写入端</th><th>适用场景</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>std::async(f)</code></td><td>最省事，直接跑一个函数</td></tr>
+            <tr><td><code>std::promise&lt;T&gt;</code></td><td><strong>手动</strong>在任意时刻、任意线程里填值</td></tr>
+            <tr><td><code>std::packaged_task&lt;F&gt;</code></td><td>把可调用体包起来，方便丢进线程池</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>9.2 成员函数</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>函数</th><th>作用</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>get()</code></td><td><strong>阻塞</strong>直到就绪，取走结果。<strong>只能调一次</strong></td></tr>
+            <tr><td><code>wait()</code></td><td>只等待，不取值</td></tr>
+            <tr><td><code>wait_for(dur)</code> / <code>wait_until(tp)</code></td><td>带超时，返回 <code>future_status</code>：<code>ready</code> / <code>timeout</code> / <code>deferred</code></td></tr>
+            <tr><td><code>valid()</code></td><td>是否还关联着共享状态</td></tr>
+            <tr><td><code>share()</code></td><td>转成 <code>shared_future</code>（可多次 get、可拷贝）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>9.3 三个必知细节</h3>
+      <p><strong>A. <code>get()</code> 只能调一次</strong>（结果是被 move 走的）：</p>
+      <pre class="answer-code-block"><code>std::future&lt;int&gt; f = std::async([]{ return 42; });
+int a = f.get();     // OK，之后 f.valid() == false
+int b = f.get();     // ✗ 抛 std::future_error
+
+std::shared_future&lt;int&gt; sf = f.share();   // 想多次读就转成 shared_future</code></pre>
+
+      <p><strong>B. 异常会跨线程传递</strong> —— 这是 <code>future</code> 相对裸线程的最大优势：</p>
+      <pre class="answer-code-block"><code>auto f = std::async([]{
+    throw std::runtime_error("boom");
+    return 1;
+});
+
+try {
+    f.get();                     // 异常在这里【重新抛出】
+} catch (const std::exception&amp; e) {
+    std::cout &lt;&lt; e.what();       // boom
+}</code></pre>
+      <p>裸 <code>std::thread</code> 里抛出未捕获的异常会直接 <code>std::terminate</code>，没法传给主线程。</p>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">C. <code>std::async</code> 返回的 future 析构会阻塞（大坑）</span>
+        <pre class="answer-code-block"><code>std::async(std::launch::async, longTask);   // ✗ 临时 future 立刻析构
+                                            //   → 在这里【阻塞】等 longTask 跑完
+                                            //   看起来是异步，实际变成了同步
+
+auto f = std::async(std::launch::async, longTask);   // ✓ 必须用变量接住
+// ... 干别的
+f.get();</code></pre>
+      </div>
+
+      <h3>9.4 <code>promise</code> 用法</h3>
+      <pre class="answer-code-block"><code>std::promise&lt;int&gt; p;
+std::future&lt;int&gt; f = p.get_future();      // 先拿到读取端
+
+std::thread t([&amp;p] {
+    try {
+        p.set_value(compute());           // 填值
+    } catch (...) {
+        p.set_exception(std::current_exception());   // 或填异常
+    }
+});
+
+int result = f.get();                     // 主线程在这里等
+t.join();</code></pre>
+
+      <h3>9.5 什么时候用 future，什么时候用条件变量</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th><code>future</code></th><th><code>condition_variable</code></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>通知次数</td><td><strong>一次性</strong>（一个结果）</td><td>可<strong>反复</strong>通知</td></tr>
+            <tr><td>携带数据</td><td>天然携带返回值/异常</td><td>需要自己配共享变量</td></tr>
+            <tr><td>适合</td><td>「算一个东西，我等结果」</td><td>「持续的生产-消费流」</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="decltype">
+      <h2>10. 为什么需要 <code>decltype</code></h2>
+      <div class="guide-callout is-key">
+        <span class="callout-label">一句话</span>
+        <p><code>auto</code> 会「洗掉」引用和 const，<code>decltype</code> 能<strong>原样保留</strong>类型；而且它能对「还没有对象的表达式」问类型。</p>
+      </div>
+
+      <h3>10.1 问题一：<code>auto</code> 会丢引用和顶层 const</h3>
+      <pre class="answer-code-block"><code>int x = 1;
+const int&amp; cr = x;
+
+auto  a = cr;   // int         ← 引用没了，const 也没了
+auto&amp; b = cr;   // const int&amp;  ← 得自己补 &amp;
+
+decltype(cr) c = x;  // const int&amp;  ← 原样保留</code></pre>
+      <p>写泛型代码时，你常常需要「和某个东西<strong>完全一样</strong>的类型」，不能被 decay 掉。</p>
+
+      <h3>10.2 问题二：返回类型依赖参数类型（最初的核心动机）</h3>
+      <pre class="answer-code-block"><code>template &lt;typename T, typename U&gt;
+??? add(T a, U b) {
+    return a + b;      // int+double 是 double，int+int 是 int，写不出固定类型
+}
+
+// C++11 解法：尾置返回类型
+template &lt;typename T, typename U&gt;
+auto add(T a, U b) -&gt; decltype(a + b) {
+    return a + b;
+}</code></pre>
+      <p>为什么要写在<strong>后面</strong>？因为写在前面时 <code>a</code>、<code>b</code> 还没声明，编译器不认识它们。C++14 起可以简化成 <code>auto add(T a, U b)</code> 让编译器推，但返回引用时仍需要 <code>decltype(auto)</code>。</p>
+
+      <h3>10.3 问题三：完美转发返回值</h3>
+      <pre class="answer-code-block"><code>template &lt;typename F, typename... Args&gt;
+auto call(F&amp;&amp; f, Args&amp;&amp;... args) {
+    return f(std::forward&lt;Args&gt;(args)...);   // ✗ f 返回 int&amp; 时退化成 int
+}
+
+template &lt;typename F, typename... Args&gt;
+decltype(auto) call(F&amp;&amp; f, Args&amp;&amp;... args) {
+    return f(std::forward&lt;Args&gt;(args)...);   // ✓ f 返回什么，就原样返回什么
+}</code></pre>
+      <p><code>decltype(auto)</code>（C++14）＝「按 <code>decltype</code> 的规则推导」，是转发层的标准写法。</p>
+
+      <h3>10.4 问题四：在「不求值语境」里问类型</h3>
+      <p><code>decltype(expr)</code> <strong>不会真的执行</strong> <code>expr</code>，只分析它的类型。这在类型萃取、SFINAE、概念检测里很关键 —— 你想知道「这个调用合不合法 / 返回什么」，但不想真的调用它。</p>
+      <pre class="answer-code-block"><code>decltype(std::declval&lt;Order&gt;().id) n = 0;   // int，没有真的构造 Order
+
+// 检测类型 T 是否有 size() 成员
+template &lt;typename T&gt;
+auto hasSize(int) -&gt; decltype(std::declval&lt;T&gt;().size(), std::true_type{});
+template &lt;typename T&gt;
+std::false_type hasSize(...);</code></pre>
+
+      <h3>10.5 推导规则（三条，考点）</h3>
+      <pre class="answer-code-block"><code>int x = 0;
+int&amp; rx = x;
+
+decltype(x)     a;      // int      ← 变量名 → 它的声明类型
+decltype(rx)    b = x;  // int&amp;     ← 声明是引用就是引用
+decltype((x))   c = x;  // int&amp;     ← 加括号变成「表达式」，左值 → 加 &amp;
+decltype(x + 1) d;      // int      ← 纯右值表达式 → 不加引用</code></pre>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>写法</th><th>结果</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>decltype(变量名)</code></td><td>变量<strong>声明时</strong>的类型</td></tr>
+            <tr><td><code>decltype(表达式)</code></td><td>表达式是左值 → <code>T&amp;</code>；是纯右值 → <code>T</code></td></tr>
+            <tr><td><code>decltype((x))</code></td><td>多一层括号 → 变成表达式 → <code>int&amp;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>decltype((x))</code> 那个坑几乎必考。</p>
+
+      <h3>10.6 <code>auto</code> vs <code>decltype</code></h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th><code>auto</code></th><th><code>decltype</code></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>依据</td><td>初始化式</td><td>任意表达式（可不求值）</td></tr>
+            <tr><td>引用</td><td>默认丢弃</td><td>保留</td></tr>
+            <tr><td>顶层 const</td><td>默认丢弃</td><td>保留</td></tr>
+            <tr><td>必须有初始值</td><td>是</td><td>否</td></tr>
+            <tr><td>典型用途</td><td>局部变量少写类型</td><td>泛型返回类型、类型萃取、完美转发</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-key">
+        <span class="callout-label">一句话背诵</span>
+        <p><code>auto</code> 是「给我一个方便的类型」，会 decay；<code>decltype</code> 是「告诉我这个表达式<strong>确切</strong>是什么类型」，保留引用和 const，还能在不求值的情况下问。泛型库、返回类型推导、完美转发离不开它，业务代码里日常用 <code>auto</code> 就够。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="cheatsheet">
+      <h2>11. 一页速记</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>问题</th><th>答案</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>互斥量是什么</td><td>只有一把钥匙的门锁；它锁的是<strong>代码</strong>不是数据，靠全员遵守约定，所以要把数据和锁封装在一起</td></tr>
+            <tr><td>临界区边界怎么定</td><td><strong>不变量被破坏到恢复</strong>的那段区间；用 <code>{ }</code> 精确框定，「先查后用」必须合并，I/O 和回调必须挪出去</td></tr>
+            <tr><td><code>l1</code> 是什么</td><td>小写 L + 1，<code>unique_lock</code> <strong>管理器</strong>的名字；被管的互斥量是 <code>muA</code></td></tr>
+            <tr><td><code>std::lock</code> 防死锁</td><td>全有或全无：任一 try_lock 失败就全部释放重来；C++17 用 <code>scoped_lock</code></td></tr>
+            <tr><td>尝试加锁</td><td><code>try_lock()</code> / <code>try_to_lock</code> tag / <code>try_lock_for</code> / <code>std::try_lock(...)</code> 返回失败下标</td></tr>
+            <tr><td><code>shared_mutex</code></td><td>写用 <code>unique_lock</code>，读用 <code>shared_lock</code>；读多写少且临界区长才划算</td></tr>
+            <tr><td>信号量</td><td>带阻塞的计数器，<strong>无所有权</strong>，可跨线程 release；用于限流和通知</td></tr>
+            <tr><td><code>swap</code></td><td>交换<strong>所有权/句柄</strong>，<code>noexcept</code>、廉价，是 copy-and-swap 的基础</td></tr>
+            <tr><td><code>join()</code> 后</td><td>OS 线程资源已回收，<code>thread</code> 对象变空壳（<code>joinable()==false</code>），可再赋值，不能二次 join</td></tr>
+            <tr><td><code>future</code></td><td>异步结果的<strong>读取端</strong>，与 promise/async/packaged_task 共享状态；<code>get()</code> 一次性、能传异常</td></tr>
+            <tr><td><code>decltype</code></td><td>保留引用与 const 的精确类型查询，可在不求值语境使用；泛型返回类型的基石</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./cpp-memory-perf-notes.html">下一篇：内存与性能</a>
+        <a class="secondary-button" href="./cpp-containers-notes.html">上一篇：容器与智能指针</a>
+        <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
+        <a class="secondary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20%E5%B9%B6%E5%8F%91%E4%B8%8E%E8%BF%9B%E7%A8%8B">去刷并发与进程题</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记，可与「拷贝与移动」「容器与智能指针」「C++ 核心笔记」配合阅读。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./cpp-modern-notes.html">C++ 核心笔记</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>

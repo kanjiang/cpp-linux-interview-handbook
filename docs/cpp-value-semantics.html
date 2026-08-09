@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C++ 值语义形象笔记 · 拷贝/移动/五法则/noexcept</title>
+  <meta name="description" content="用房产证比喻讲清拷贝构造、拷贝赋值、移动构造、移动赋值，以及三法则/五法则/零法则、noexcept 为什么影响 vector 扩容、什么时候该禁用拷贝。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">C++ Value Semantics</p>
+        <h1>拷贝与移动 · 形象笔记</h1>
+        <p>一个比喻贯穿全篇：对象手里攥着一张「房产证」。拷贝是再盖一栋房，移动是房产证过户。由此讲清四个特殊成员函数、五法则/零法则、noexcept 的性能意义，以及什么时候该禁用拷贝。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./cpp-containers-notes.html">容器与智能指针</a>
+          <a class="secondary-button" href="./cpp-concurrency-notes.html">并发与线程</a>
+          <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>
+          <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
+          <a class="secondary-button" href="./hundsun.html">恒生准备页</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#four">1. 四个函数：一个比喻讲清</a></li>
+        <li><a href="#when">2. 签名与触发时机</a></li>
+        <li><a href="#impl">3. 完整实现与三个必记细节</a></li>
+        <li><a href="#rules">4. 三法则 / 五法则 / 零法则</a></li>
+        <li><a href="#trap">5. 最大的坑：写了析构，移动就没了</a></li>
+        <li><a href="#noexcept">6. <code>noexcept</code>：为什么移动必须标</a></li>
+        <li><a href="#delete">7. 什么时候该禁用拷贝</a></li>
+        <li><a href="#cheatsheet">8. 决策速查表与背诵版</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="four">
+      <h2>1. 四个函数：一个比喻讲清</h2>
+      <p>假设你的对象手里攥着一张<strong>房产证</strong>（指向堆内存的指针）：</p>
+      <pre class="answer-code-block"><code>class Buffer {
+    char* data_;    // ← 房产证：指向一栋"房子"（堆上的内存）
+    size_t size_;
+};</code></pre>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <ul>
+          <li><strong>拷贝构造</strong>：照着你的房子<strong>再盖一栋一模一样的</strong>，给我一张新房产证 —— 贵</li>
+          <li><strong>移动构造</strong>：你的房产证<strong>直接过户</strong>给我，你手里那张作废 —— 便宜</li>
+          <li><strong>拷贝赋值</strong>：我<strong>先把自己原来的房子拆了</strong>，再照你的样子盖一栋 —— 贵</li>
+          <li><strong>移动赋值</strong>：我<strong>先拆掉自己的房子</strong>，然后接收你过户的房产证 —— 便宜</li>
+        </ul>
+      </div>
+
+      <h3>两组区别</h3>
+      <ul>
+        <li><strong>拷贝 vs 移动</strong>：拷贝后<strong>两个对象各有一栋房子</strong>；移动后<strong>只有一栋房子，换了主人</strong>，源对象变空壳。</li>
+        <li><strong>构造 vs 赋值</strong>：构造是「我刚出生，一无所有」；赋值是「我早就存在了，<strong>手上还有旧房子要先处理掉</strong>」。</li>
+      </ul>
+
+      <div class="guide-ascii">拷贝构造：  a[房子A]              →   a[房子A]   b[房子A的复制品]
+            b 刚诞生
+
+移动构造：  a[房子A]              →   a[空]      b[房子A]
+            b 刚诞生                   ↑ a 被掏空，但必须还能安全析构
+
+拷贝赋值：  a[房子A]  b[房子B]     →   a[房子A]   b[房子A的复制品]
+                                              ↑ 房子B 先被拆掉
+
+移动赋值：  a[房子A]  b[房子B]     →   a[空]      b[房子A]
+                                              ↑ 房子B 先被拆掉</div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="when">
+      <h2>2. 签名与触发时机</h2>
+      <pre class="answer-code-block"><code>class Buffer {
+public:
+    Buffer(const Buffer&amp; other);                 // 拷贝构造
+    Buffer&amp; operator=(const Buffer&amp; other);      // 拷贝赋值
+    Buffer(Buffer&amp;&amp; other) noexcept;             // 移动构造
+    Buffer&amp; operator=(Buffer&amp;&amp; other) noexcept;  // 移动赋值
+    ~Buffer();                                    // 析构
+};</code></pre>
+
+      <pre class="answer-code-block"><code>Buffer a(100);
+
+Buffer b = a;             // 拷贝构造（b 是新对象，a 是左值）
+Buffer c = std::move(a);  // 移动构造（c 是新对象，源是右值）
+Buffer d(200);
+d = b;                    // 拷贝赋值（d 已存在）
+d = std::move(b);         // 移动赋值（d 已存在，源是右值）
+d = Buffer(300);          // 移动赋值（临时量是右值）</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">判断口诀</span>
+        <p>左边是<strong>新对象</strong> → 构造；左边是<strong>已有对象</strong> → 赋值。<br />
+          右边是<strong>左值</strong> → 拷贝；右边是<strong>右值</strong>（临时量或 <code>std::move</code>）→ 移动。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="impl">
+      <h2>3. 完整实现与三个必记细节</h2>
+      <pre class="answer-code-block"><code>class Buffer {
+public:
+    explicit Buffer(size_t n)
+        : data_(new char[n]), size_(n) {}
+
+    ~Buffer() { delete[] data_; }
+
+    // ① 拷贝构造：盖一栋新房子，把内容搬进去
+    Buffer(const Buffer&amp; o)
+        : data_(new char[o.size_]), size_(o.size_) {
+        std::memcpy(data_, o.data_, size_);
+    }
+
+    // ② 移动构造：房产证过户，源对象置空
+    Buffer(Buffer&amp;&amp; o) noexcept
+        : data_(o.data_), size_(o.size_) {
+        o.data_ = nullptr;      // ★ 必须置空！否则析构时房子被拆两次
+        o.size_ = 0;
+    }
+
+    // ③ 拷贝赋值：先拆自己的房子，再盖新的
+    Buffer&amp; operator=(const Buffer&amp; o) {
+        if (this == &amp;o) return *this;    // ★ 自赋值检查
+        char* tmp = new char[o.size_];   // ★ 先申请成功再删旧的（异常安全）
+        std::memcpy(tmp, o.data_, o.size_);
+        delete[] data_;
+        data_ = tmp;
+        size_ = o.size_;
+        return *this;
+    }
+
+    // ④ 移动赋值：先拆自己的房子，再接收过户
+    Buffer&amp; operator=(Buffer&amp;&amp; o) noexcept {
+        if (this == &amp;o) return *this;
+        delete[] data_;          // ★ 别忘了释放自己原有的资源
+        data_ = o.data_;
+        size_ = o.size_;
+        o.data_ = nullptr;
+        o.size_ = 0;
+        return *this;
+    }
+
+private:
+    char* data_;
+    size_t size_;
+};</code></pre>
+
+      <h3>细节 ①：移动之后源对象必须「有效但未指定」</h3>
+      <p>不是随便扔着不管 —— 它至少要能<strong>安全析构</strong>、能被<strong>重新赋值</strong>。所以一定要把指针置 <code>nullptr</code>。</p>
+      <pre class="answer-code-block"><code>Buffer b = std::move(a);
+// a 现在是空壳，但：
+a.~Buffer();        // ✓ 必须能安全析构（delete nullptr 是合法的）
+a = Buffer(50);     // ✓ 必须能重新赋值
+a.size();           // ✓ 允许调用，但值是"未指定"的，不要假设还有原来的数据</code></pre>
+
+      <h3>细节 ②：赋值必须先处理自己的旧资源</h3>
+      <p>这是赋值和构造最大的区别。忘了就是内存泄漏 —— 相当于你搬进新房，旧房子还占着地不拆。</p>
+
+      <h3>细节 ③：拷贝赋值要「先分配后释放」</h3>
+      <p>而不是「先 <code>delete</code> 再 <code>new</code>」。因为 <code>new</code> 可能抛异常，那样你就既没了旧数据、也没有新数据。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="rules">
+      <h2>4. 三法则 / 五法则 / 零法则</h2>
+
+      <h3>三法则（C++98）</h3>
+      <p>如果你需要自己写<strong>析构函数、拷贝构造、拷贝赋值</strong>中的任意一个，那几乎肯定三个都需要。</p>
+      <p>原因很直白：需要自定义析构 → 说明你手里管着<strong>裸资源</strong> → 那默认的<strong>浅拷贝</strong>必然出问题（双重释放）。</p>
+
+      <h3>五法则（C++11）</h3>
+      <div class="guide-ascii">1. 析构函数        ~Buffer()
+2. 拷贝构造        Buffer(const Buffer&amp;)
+3. 拷贝赋值        operator=(const Buffer&amp;)
+4. 移动构造        Buffer(Buffer&amp;&amp;) noexcept
+5. 移动赋值        operator=(Buffer&amp;&amp;) noexcept</div>
+      <p>写了其中一个，就该把五个都想一遍。</p>
+
+      <h3>零法则（Rule of Zero）—— 实际最推荐</h3>
+      <p>最好的做法是：<strong>一个都不写</strong>。让成员变量自己管资源，编译器生成的五个函数全都是正确的。</p>
+      <pre class="answer-code-block"><code>class Buffer {
+public:
+    explicit Buffer(size_t n) : data_(n) {}
+    // 五个函数一个都不用写，编译器生成的全对
+private:
+    std::vector&lt;char&gt; data_;    // ← vector 自己会拷贝、会移动、会析构
+};</code></pre>
+      <div class="guide-callout is-key">
+        <span class="callout-label">实践结论</span>
+        <p>工程里 <strong>95% 的类都应该遵守零法则</strong>。只有在写底层容器、包装 C API 句柄、实现 RAII 封装时，才需要五法则。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="trap">
+      <h2>5. 最大的坑：写了析构函数，移动就悄悄没了</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>你声明了</th>
+              <th>后果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>析构函数</strong></td>
+              <td>移动构造/移动赋值<strong>不再自动生成</strong> → 所有"移动"退化成<strong>拷贝</strong></td>
+            </tr>
+            <tr>
+              <td>任意一个<strong>拷贝</strong>操作</td>
+              <td>移动操作<strong>不再自动生成</strong>；另一个拷贝操作仍生成（但已被标记为废弃）</td>
+            </tr>
+            <tr>
+              <td>任意一个<strong>移动</strong>操作</td>
+              <td>两个拷贝操作被<strong>隐式 delete</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <pre class="answer-code-block"><code>class Widget {
+public:
+    ~Widget() { log("destroyed"); }   // ← 只是想打个日志
+    std::vector&lt;int&gt; data_;
+};
+
+Widget a;
+Widget b = std::move(a);   // ✗ 实际执行的是【拷贝构造】！vector 被完整复制</code></pre>
+        <p>只因为多写了一个析构函数，性能就悄无声息地掉了。</p>
+      </div>
+
+      <p>解决办法：真需要时把五个显式补齐，用 <code>= default</code> 明确要回来。</p>
+      <pre class="answer-code-block"><code>class Widget {
+public:
+    ~Widget() { log("destroyed"); }
+
+    Widget() = default;
+    Widget(const Widget&amp;) = default;
+    Widget&amp; operator=(const Widget&amp;) = default;
+    Widget(Widget&amp;&amp;) noexcept = default;             // ← 明确要回来
+    Widget&amp; operator=(Widget&amp;&amp;) noexcept = default;
+
+    std::vector&lt;int&gt; data_;
+};</code></pre>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="noexcept">
+      <h2>6. <code>noexcept</code>：为什么移动操作必须标</h2>
+      <p><code>noexcept</code> 是一个<strong>承诺</strong>：这个函数绝不抛异常。违背承诺时程序不会栈展开，而是直接 <code>std::terminate()</code>。它的价值在于：<strong>编译器和标准库会依据这个承诺选择更快的代码路径</strong>。</p>
+
+      <h3>核心场景：<code>std::vector</code> 扩容</h3>
+      <p><code>vector</code> 满了要扩容时，需要把老数组的元素搬到新数组。它面临一个抉择：用移动（快）还是用拷贝（慢）？</p>
+      <div class="guide-ascii">假如搬到第 5 个元素时，移动构造【抛异常】了：
+
+  老数组：[空][空][空][空][坏][6][7]   ← 前 4 个已经被掏空了！
+  新数组：[1][2][3][4][ ?][ ][ ]
+
+  → 老数组回不去了，新数组也没建完
+  → 数据【彻底丢失】</div>
+      <p>而如果用<strong>拷贝</strong>，老数组原封不动，出异常时把新数组一扔就行，<code>vector</code> 还是原来的样子 —— 这叫<strong>强异常安全保证</strong>（要么成功，要么完全不变）。</p>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">所以</span>
+        <p><code>vector</code> 的策略是：<strong>只有当元素的移动构造是 <code>noexcept</code> 时才用移动，否则老老实实用拷贝</strong>。内部通过 <code>std::move_if_noexcept</code> 实现。</p>
+      </div>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">后果</span>
+        <pre class="answer-code-block"><code>class Widget {
+    std::vector&lt;char&gt; data_;
+public:
+    Widget(Widget&amp;&amp;);            // ✗ 忘了标 noexcept
+};
+
+std::vector&lt;Widget&gt; v;
+v.push_back(...);                // 扩容时全程【拷贝】，性能可能差几十倍</code></pre>
+        <p>加一个 <code>noexcept</code> 就能让性能翻几倍，而且完全免费。</p>
+      </div>
+
+      <h3>哪些地方该标 / 不该标</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>应该标</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>移动构造 / 移动赋值</strong></td><td>vector 扩容等场景的性能关键</td></tr>
+            <tr><td><strong><code>swap</code></strong></td><td>copy-and-swap 惯用法的基石</td></tr>
+            <tr><td>析构函数</td><td>C++11 起<strong>默认就是</strong> noexcept，不用手写</td></tr>
+            <tr><td>简单 getter、不分配内存的函数</td><td>优化收益</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>不该标</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>会分配内存的（可能抛 <code>bad_alloc</code>）</td><td>违背承诺 → terminate</td></tr>
+            <tr><td>调用了可能抛异常的代码</td><td>同上</td></tr>
+            <tr><td>接口还没稳定的</td><td><code>noexcept</code> 属于接口的一部分，加了不好撤</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>补充：<code>= default</code> 生成的移动操作，如果所有成员的移动都是 <code>noexcept</code>，编译器会自动推导为 <code>noexcept</code>。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="delete">
+      <h2>7. 什么时候该禁用拷贝</h2>
+      <pre class="answer-code-block"><code>class Foo {
+public:
+    Foo(const Foo&amp;) = delete;
+    Foo&amp; operator=(const Foo&amp;) = delete;
+};</code></pre>
+      <p>放在 <code>public</code> 区，而不是 C++98 时代的「声明为 private 且不实现」—— 因为 <code>= delete</code> 在编译期就报错，且错误信息清晰得多。</p>
+
+      <h3>六种典型场景</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>场景</th>
+              <th>说明与例子</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>① 独占型资源所有权</td>
+              <td>同一份资源只能有一个主人。<code>unique_ptr</code>、<code>std::thread</code>、<code>fstream</code>、<code>mutex</code>、<code>lock_guard</code> 都是如此；能拷贝就会 double free</td>
+            </tr>
+            <tr>
+              <td>② 拷贝语义讲不通</td>
+              <td>「复制一把锁」是什么意思？新锁是锁着还是开着？等它的线程怎么办？问不出合理答案就该禁用</td>
+            </tr>
+            <tr>
+              <td>③ RAII 守卫类</td>
+              <td><code>ScopedTimer</code>、<code>lock_guard</code>：生命周期严格绑定作用域，拷贝会导致收尾动作执行两次</td>
+            </tr>
+            <tr>
+              <td>④ 有「身份」的对象</td>
+              <td>数据库连接、会话、订单实体：唯一 id、唯一 fd，复制出来两个共用一个 fd 就错了</td>
+            </tr>
+            <tr>
+              <td>⑤ 拷贝代价巨大想强制显式</td>
+              <td>禁掉隐式拷贝，另提供 <code>clone()</code>；这样传参写错会直接编译报错，而不是悄悄拷了 1GB</td>
+            </tr>
+            <tr>
+              <td>⑥ 单例</td>
+              <td>全局唯一实例，拷贝本身就违背设计</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre class="answer-code-block"><code>std::unique_ptr&lt;int&gt; a(new int(1));
+std::unique_ptr&lt;int&gt; b = a;             // ✗ 编译错误 —— 这正是设计目的
+std::unique_ptr&lt;int&gt; c = std::move(a);  // ✓ 转移所有权</code></pre>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">连带效应</span>
+        <p><strong>只要拷贝操作被声明（哪怕是 <code>= delete</code>），移动操作就不再自动生成。</strong></p>
+        <pre class="answer-code-block"><code>class Foo {
+public:
+    Foo(const Foo&amp;) = delete;   // 声明了拷贝操作 → 移动操作不会自动生成
+};
+
+Foo a;
+Foo b = std::move(a);           // ✗ 编译错误</code></pre>
+      </div>
+
+      <p>想要「不可拷贝、但可移动」（最常见的诉求），必须显式补上 —— 这就是 <code>unique_ptr</code> / <code>std::thread</code> 的 <strong>move-only</strong> 模式：</p>
+      <pre class="answer-code-block"><code>class Connection {
+public:
+    Connection(const Connection&amp;) = delete;
+    Connection&amp; operator=(const Connection&amp;) = delete;
+
+    Connection(Connection&amp;&amp;) noexcept = default;              // ← 必须显式写
+    Connection&amp; operator=(Connection&amp;&amp;) noexcept = default;
+};</code></pre>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="cheatsheet">
+      <h2>8. 决策速查表与背诵版</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th>你的类持有什么</th>
+              <th>该怎么做</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>只有 <code>vector</code>/<code>string</code>/<code>shared_ptr</code> 等</td><td><strong>零法则</strong>：什么都别写</td></tr>
+            <tr><td>独占资源（fd、句柄、<code>unique_ptr</code>）</td><td>禁用拷贝 + <code>= default</code> 移动 → move-only</td></tr>
+            <tr><td>裸指针/裸资源，且需要深拷贝</td><td><strong>五法则</strong>：五个全写，移动标 <code>noexcept</code></td></tr>
+            <tr><td>只想加个析构日志</td><td>五个补 <code>= default</code>，否则移动会退化成拷贝</td></tr>
+            <tr><td>语义上不该被复制（锁、会话、单例）</td><td><code>= delete</code> 拷贝</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">一页背诵</span>
+        <p><strong>四个函数</strong>：拷贝＝盖新房，移动＝过户；构造是「我刚出生」，赋值是「我得先拆掉自己的旧房」。<br />
+          <strong>移动后源对象</strong>必须是「空但可安全析构」的状态。<br />
+          <strong>五法则</strong>：写了一个就想全五个；<strong>零法则</strong>：用智能指针和容器，一个都别写 —— 优先零法则。<br />
+          <strong>坑</strong>：写了析构函数，移动就悄悄退化成拷贝。<br />
+          <strong><code>noexcept</code></strong>：移动操作不标，<code>vector</code> 扩容就不敢用移动，性能白丢。<br />
+          <strong>禁用拷贝</strong>：独占资源、语义讲不通、有唯一身份时；且记得<strong>显式补回移动</strong>，否则连移动一起没了。</p>
+      </div>
+
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./cpp-containers-notes.html">下一篇：容器与智能指针</a>
+        <a class="secondary-button" href="./cpp-concurrency-notes.html">并发与线程</a>
+        <a class="secondary-button" href="./index.html?category=C%2B%2B%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">去刷 C++ 知识直讲</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记，可与「C++ 核心笔记」「容器与智能指针」「并发与线程」三篇配合阅读。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./cpp-modern-notes.html">C++ 核心笔记</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>

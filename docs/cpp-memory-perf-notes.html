@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C++ 内存与性能形象笔记 · 对齐/伪共享/内存池/STL 底层</title>
+  <meta name="description" content="用停车位、白板争抢、抽屉零钱的比喻讲清内存对齐与 padding、cache 伪共享与 alignas(64)、内存池与 pmr，以及 STL 各容器的底层结构、复杂度与迭代器失效规则。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Memory &amp; Performance</p>
+        <h1>内存与性能 · 形象笔记</h1>
+        <p>内存对齐是「停车位要画线」，伪共享是「两个人抢同一块白板」，内存池是「自带一箱零钱不用跑银行」。再把 STL 各容器的底层结构、复杂度和迭代器失效规则一次讲透。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
+          <a class="secondary-button" href="./cpp-containers-notes.html">容器与智能指针</a>
+          <a class="secondary-button" href="./cpp-concurrency-notes.html">并发与线程</a>
+          <a class="secondary-button" href="./hundsun.html">恒生准备页</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#align">1. 内存对齐 · 停车位要画线</a></li>
+        <li><a href="#false-sharing">2. Cache 伪共享 · 两个人抢同一块白板</a></li>
+        <li><a href="#pool">3. 内存池 · 自带一箱零钱</a></li>
+        <li><a href="#stl">4. STL 底层实现</a></li>
+        <li><a href="#cheatsheet">5. 一页速记</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="align">
+      <h2>1. 内存对齐 · 停车位要画线</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>CPU 读内存不是「你要几个字节就读几个字节」，而是<strong>按固定大小的块整块搬</strong>（通常 4 或 8 字节，一条 cache line 是 64 字节）。内存被划成一格一格的停车位，一辆车正好停进一格就一次读完；横跨两格就得读两次再拼起来。</p>
+      </div>
+
+      <div class="guide-ascii">内存被划成一格一格（假设每格 4 字节）：
+
+  ┌────┬────┬────┬────┐
+  │ 0  │ 4  │ 8  │ 12 │
+  └────┴────┴────┴────┘
+
+对齐的 int（地址 4）：      [....int....]      ← 一次读完 ✓
+未对齐的 int（地址 6）：       [..int..]        ← 横跨两格，读两次再拼 ✗
+                        ┌────┬────┐
+                        │ 4  │ 8  │</div>
+
+      <h3>1.1 不对齐的后果</h3>
+      <ul>
+        <li>x86 上：能读，但<strong>慢</strong>（两次访存 + 拼接）</li>
+        <li>老 ARM / SPARC / MIPS 上：<strong>直接 SIGBUS 崩溃</strong></li>
+        <li><code>std::atomic</code>：<strong>未对齐就无法保证原子性</strong>（原子指令要求单次访存完成）</li>
+      </ul>
+
+      <h3>1.2 结构体 padding：成员顺序决定大小</h3>
+      <pre class="answer-code-block"><code>struct A {          // sizeof = 12
+    char  a;        // 偏移 0
+    // 3 字节填充    ← 为了让 b 落在 4 的倍数
+    int   b;        // 偏移 4
+    char  c;        // 偏移 8
+    // 3 字节填充    ← 整体大小要是 4 的倍数（数组里下一个也要对齐）
+};
+
+struct B {          // sizeof = 8  ← 只是换了个顺序，省了 33%
+    char  a;        // 偏移 0
+    char  c;        // 偏移 1
+    // 2 字节填充
+    int   b;        // 偏移 4
+};</code></pre>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>规则</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>成员偏移</td><td>必须是 <code>alignof(成员类型)</code> 的倍数</td></tr>
+            <tr><td>整体大小</td><td>必须是<strong>最大成员对齐值</strong>的倍数（保证数组里每个元素都对齐）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-key">
+        <span class="callout-label">实践口诀</span>
+        <p><strong>成员按大小从大到小排</strong>（<code>double</code> → <code>int64</code> → <code>int</code> → <code>short</code> → <code>char</code> → <code>bool</code>），能显著减少 padding。订单结构体一个字段的顺序差异，在百万级对象时就是几十 MB 的内存差。</p>
+      </div>
+
+      <h3>1.3 相关工具</h3>
+      <pre class="answer-code-block"><code>alignof(int);              // 4
+alignof(double);           // 8
+alignof(std::max_align_t); // 通常 16
+
+alignas(64) int counter;   // 强制对齐到 64 字节（cache line）
+
+#pragma pack(1)            // 取消填充，紧凑排列
+struct Packet { char type; int len; };   // sizeof = 5
+#pragma pack()</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">注意</span>
+        <p><code>#pragma pack(1)</code> <strong>只该用在网络协议 / 文件格式的解析结构体上</strong>（因为对端就是紧凑排列的），业务结构体用了会拖慢访问速度。</p>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p>为什么 <code>sizeof(struct{char; int;})</code> 是 8 不是 5？因为 <code>int</code> 必须落在 4 的倍数地址上，中间填了 3 字节；这是为了让 CPU 一次访存就能取到，避免跨边界的两次读取（某些架构上甚至直接崩）。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="false-sharing">
+      <h2>2. Cache 伪共享 · 两个人抢同一块白板</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>CPU 的 cache <strong>不是按字节管理的，是按「行」管理的，一行 64 字节</strong>。办公室里有一块白板（cache line），甲要在左上角写字，乙要在右下角写字。虽然两人写的是<strong>完全不同的位置</strong>，但规则是：谁要写，就得把<strong>整块白板</strong>搬到自己桌上，别人手里的副本作废。结果白板在两张桌子之间来回飞，谁都没干成活。</p>
+      </div>
+
+      <p><strong>伪共享（false sharing）</strong>：两个线程访问的是<strong>不同的变量</strong>，但这两个变量<strong>恰好落在同一条 cache line 上</strong>，于是在硬件层面被迫互相争抢。</p>
+
+      <h3>2.1 代码演示</h3>
+      <pre class="answer-code-block"><code>struct Counters {
+    long a;   // 线程 1 只碰 a
+    long b;   // 线程 2 只碰 b
+};            // a 和 b 挨在一起，必定在同一条 cache line
+
+Counters c;
+// 线程1：for (...) ++c.a;
+// 线程2：for (...) ++c.b;</code></pre>
+      <p>逻辑上零冲突，<strong>实测可能比单线程还慢 5～10 倍</strong>。底层原因是 <strong>MESI 缓存一致性协议</strong>：</p>
+      <div class="guide-ascii">核心0 写 a  →  核心1 上那条 line 被标记 Invalid
+核心1 写 b  →  发现自己的 line 失效了，要重新从核心0/内存拉回来
+              →  同时把核心0 的标记为 Invalid
+              →  无限循环，总线被"缓存乒乓"打满</div>
+
+      <h3>2.2 解决办法：把它们隔开</h3>
+      <pre class="answer-code-block"><code>struct alignas(64) PaddedCounter {
+    long value;
+    // 编译器自动补足到 64 字节
+};
+
+PaddedCounter a, b;   // 各占一条独立的 cache line，互不打扰</code></pre>
+      <p>C++17 提供了标准常量，不用硬编码 64：</p>
+      <pre class="answer-code-block"><code>#include &lt;new&gt;
+
+struct Counters {
+    alignas(std::hardware_destructive_interference_size) long a;
+    alignas(std::hardware_destructive_interference_size) long b;
+};</code></pre>
+      <ul>
+        <li><code>hardware_destructive_interference_size</code>：<strong>要分开</strong>的最小距离（避免伪共享）</li>
+        <li><code>hardware_constructive_interference_size</code>：<strong>要凑近</strong>的最大距离（希望一起被加载）</li>
+      </ul>
+
+      <h3>2.3 哪些场景要警惕</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>场景</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>每线程统计计数器数组</strong></td><td><code>long counts[NUM_THREADS]</code> —— 最经典的翻车现场</td></tr>
+            <tr><td>无锁队列的 head / tail</td><td>生产者写 tail、消费者写 head，必须分开</td></tr>
+            <tr><td>线程池的任务计数</td><td>多个 worker 各自的状态字段</td></tr>
+            <tr><td>自旋锁数组</td><td>多个锁挤在一起</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.4 真共享 vs 伪共享</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>现象</th><th>解法</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>真共享</strong></td><td>多线程真的在读写<strong>同一个变量</strong></td><td>改算法：分片累加、<code>thread_local</code> 后汇总</td></tr>
+            <tr><td><strong>伪共享</strong></td><td>变量不同，只是<strong>物理上挨着</strong></td><td>加 padding / <code>alignas(64)</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p>伪共享是「逻辑上不冲突、物理上冲突」—— 变量落在同一条 64 字节 cache line 上，一个核写就让别的核的副本失效，导致缓存行在核间来回搬运。解法是 <code>alignas(64)</code> 把热点变量各自隔到独立 cache line。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="pool">
+      <h2>3. 内存池 · 自带一箱零钱，不用每次跑银行</h2>
+
+      <h3>3.1 为什么需要：<code>new</code> / <code>malloc</code> 慢在哪</h3>
+      <div class="guide-ascii">1. 要在空闲链表（bins）里【找】一块合适的
+2. 多线程下要【加锁】（glibc 用 arena 缓解，但仍有竞争）
+3. 块不够大时要向内核要内存 → brk / mmap 【系统调用】
+4. 长期运行后产生【碎片】，找块越来越慢
+5. 最要命的：延迟【不可预测】—— 平时 50ns，偶尔 50μs</div>
+      <p>最后一条是低延迟系统的死穴。交易柜台不怕平均慢，怕的是<strong>尾延迟（P99.9）突然抖一下</strong>，而 <code>malloc</code> 恰好是抖动的主要来源之一。</p>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>不用内存池：每次买东西都跑一趟银行取钱（每次 <code>new</code> 都找分配器要）。<br />
+          用内存池：开工前一次性取一万块零钱放抽屉里，要用就从抽屉拿，用完扔回抽屉，全程不出门。</p>
+      </div>
+
+      <h3>3.2 最简单的实现：固定大小对象池</h3>
+      <p>核心技巧：<strong>空闲块自己存下一个空闲块的地址</strong>（侵入式链表），所以额外开销为 0。</p>
+      <pre class="answer-code-block"><code>class OrderPool {
+public:
+    explicit OrderPool(size_t n) {
+        chunk_ = static_cast&lt;Order*&gt;(::operator new(n * sizeof(Order)));
+        // 把所有块串成一条 free list
+        for (size_t i = 0; i &lt; n - 1; ++i)
+            *reinterpret_cast&lt;void**&gt;(&amp;chunk_[i]) = &amp;chunk_[i + 1];
+        *reinterpret_cast&lt;void**&gt;(&amp;chunk_[n - 1]) = nullptr;
+        freeList_ = chunk_;
+    }
+
+    void* allocate() {
+        if (!freeList_) return nullptr;                     // 池空了
+        void* p = freeList_;
+        freeList_ = *reinterpret_cast&lt;void**&gt;(freeList_);   // 摘下头节点
+        return p;                                            // O(1)，无查找、无锁
+    }
+
+    void deallocate(void* p) {
+        *reinterpret_cast&lt;void**&gt;(p) = freeList_;           // 挂回头部
+        freeList_ = static_cast&lt;Order*&gt;(p);                  // O(1)
+    }
+
+private:
+    Order* chunk_;
+    void*  freeList_;
+};</code></pre>
+      <p>配合 <strong>placement new</strong> 使用（在已有内存上构造对象）：</p>
+      <pre class="answer-code-block"><code>void* mem = pool.allocate();
+Order* o = new (mem) Order(id, price);   // 只构造，不分配
+
+o-&gt;~Order();                              // 只析构，不释放
+pool.deallocate(mem);</code></pre>
+
+      <h3>3.3 常见的池类型</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>类型</th><th>适用</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>固定块池 / 对象池</strong></td><td>同一种对象反复创建销毁（订单、消息）</td><td>上面那种，最快</td></tr>
+            <tr><td><strong>Slab</strong></td><td>多种固定尺寸</td><td>按 size class 分成多个池（tcmalloc 思路）</td></tr>
+            <tr><td><strong>Buddy 伙伴系统</strong></td><td>变长，需要合并</td><td>Linux 内核用它管物理页</td></tr>
+            <tr><td><strong>Arena / 线性分配器</strong></td><td>一批对象<strong>同生共死</strong>（一次请求的临时数据）</td><td>只有 alloc 没有 free，处理完整块重置，快到离谱</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.4 C++17 标准方案：<code>std::pmr</code></h3>
+      <pre class="answer-code-block"><code>#include &lt;memory_resource&gt;
+
+char buffer[1 &lt;&lt; 20];                                   // 1MB 缓冲
+std::pmr::monotonic_buffer_resource pool(buffer, sizeof(buffer));
+
+std::pmr::vector&lt;int&gt; v(&amp;pool);      // 这个 vector 的所有分配都走 pool
+v.push_back(1);                       // 零 malloc
+// pool 析构时整块一起还，不逐个 free</code></pre>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>资源类型</th><th>特点</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>monotonic_buffer_resource</code></td><td>只分配不回收，销毁时整体释放 —— 最快</td></tr>
+            <tr><td><code>unsynchronized_pool_resource</code></td><td>按 size class 分池，单线程</td></tr>
+            <tr><td><code>synchronized_pool_resource</code></td><td>同上，加锁版</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.5 坑</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>坑</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>线程安全</strong></td><td>加锁就失去了意义 → 用 <strong>thread_local 池</strong>，每个线程一个</td></tr>
+            <tr><td><strong>跨线程释放</strong></td><td>A 分配、B 释放 → 要么用无锁队列还回去，要么设计上禁止</td></tr>
+            <tr><td><strong>不还给操作系统</strong></td><td>池占的内存一直不释放，RSS 只涨不跌，容易被误判为泄漏</td></tr>
+            <tr><td><strong>越界写</strong></td><td>写坏了 free list，下次 allocate 返回野指针，<strong>极难查</strong></td></tr>
+            <tr><td><strong>对齐</strong></td><td>自己管内存就要自己保证 <code>alignof(T)</code></td></tr>
+            <tr><td><strong>过早优化</strong></td><td>先 profile 确认 <code>malloc</code> 真是瓶颈，否则纯属自找麻烦</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试一句话</span>
+        <p>内存池把「频繁向系统申请/释放」变成「一次性大块申请 + 内部 O(1) 的链表摘挂」，主要收益不是平均更快，而是<strong>消除了尾延迟抖动和碎片</strong>。代价是内存不还给 OS、跨线程要额外设计、越界破坏难排查。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="stl">
+      <h2>4. STL 底层实现</h2>
+
+      <h3>4.1 一张总表</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>容器</th><th>底层结构</th><th>查找</th><th>插入/删除</th><th>内存布局</th><th>单元素额外开销</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>vector</code></td><td>动态数组</td><td>O(n)，<code>[]</code> O(1)</td><td>尾部摊还 O(1)，中间 O(n)</td><td><strong>连续</strong></td><td>0</td></tr>
+            <tr><td><code>deque</code></td><td><strong>中控数组 + 多个固定块</strong></td><td><code>[]</code> O(1)</td><td><strong>两端</strong> O(1)</td><td>分段连续</td><td>小</td></tr>
+            <tr><td><code>list</code></td><td>双向循环链表</td><td>O(n)</td><td>O(1)（已知位置）</td><td>散乱</td><td>2 指针 = 16B</td></tr>
+            <tr><td><code>forward_list</code></td><td>单链表</td><td>O(n)</td><td>O(1)</td><td>散乱</td><td>1 指针 = 8B</td></tr>
+            <tr><td><code>map</code> / <code>set</code></td><td><strong>红黑树</strong></td><td>O(log n)</td><td>O(log n)</td><td>散乱</td><td>3 指针 + 颜色 ≈ 32B</td></tr>
+            <tr><td><code>unordered_map</code> / <code>set</code></td><td><strong>哈希桶 + 链表</strong></td><td>平均 O(1)，最坏 O(n)</td><td>平均 O(1)</td><td>桶连续、节点散乱</td><td>≈ 16B</td></tr>
+            <tr><td><code>priority_queue</code></td><td><code>vector</code> + 堆算法</td><td>堆顶 O(1)</td><td>O(log n)</td><td>连续</td><td>0</td></tr>
+            <tr><td><code>stack</code> / <code>queue</code></td><td><strong>适配器</strong>，默认 <code>deque</code></td><td>—</td><td>O(1)</td><td>—</td><td>—</td></tr>
+            <tr><td><code>string</code></td><td>动态数组 + <strong>SSO</strong></td><td>O(n)</td><td>尾部摊还 O(1)</td><td>连续</td><td>0</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>4.2 <code>deque</code>：最容易被问倒的那个</h3>
+      <p>很多人以为 <code>deque</code> 是「双向链表」，其实是<strong>分段数组 + 一个指针数组做索引</strong>：</p>
+      <div class="guide-ascii">        中控 map（一个指针数组）
+        ┌───┬───┬───┬───┐
+        │ * │ * │ * │ * │
+        └─┬─┴─┬─┴─┬─┴─┬─┘
+          ↓   ↓   ↓   ↓
+        [块] [块] [块] [块]   每块是固定大小的连续数组（libstdc++ 是 512 字节）</div>
+      <ul>
+        <li><strong>两端插入删除 O(1)</strong>（在头/尾的块里操作，不够就再挂一块）</li>
+        <li><strong><code>[]</code> 随机访问 O(1)</strong>（先算第几块，再算块内偏移，比 <code>vector</code> 稍慢）</li>
+        <li>两端插入<strong>不会让已有元素的指针/引用失效</strong>（元素不搬家），但<strong>迭代器会失效</strong>（中控可能重新分配）</li>
+        <li>中间插入 O(n)</li>
+      </ul>
+      <p>这就是 <code>std::queue</code> / <code>std::stack</code> 默认用 <code>deque</code> 而不是 <code>vector</code> 的原因：需要头部 O(1) 操作。</p>
+
+      <h3>4.3 <code>map</code> / <code>set</code>：红黑树</h3>
+      <div class="guide-ascii">红黑树五条性质：
+1. 每个节点是红或黑
+2. 根是黑的
+3. 叶子（NIL）是黑的
+4. 红节点的孩子必须是黑的（不能有连续两个红）
+5. 从任一节点到其所有叶子的路径上，黑节点数量相同
+   → 由此保证：最长路径 ≤ 2 × 最短路径 → 树高 O(log n)</div>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>AVL</th><th>红黑树</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>平衡程度</td><td>更严格（高度差 ≤ 1）</td><td>较宽松</td></tr>
+            <tr><td>查找</td><td>略快</td><td>略慢</td></tr>
+            <tr><td><strong>插入/删除的旋转次数</strong></td><td>可能 O(log n) 次</td><td><strong>最多 3 次</strong></td></tr>
+            <tr><td>适用</td><td>查多改少</td><td><strong>增删改查都频繁</strong> ← STL 的定位</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-key">
+        <span class="callout-label">关键性质</span>
+        <p><code>map</code>/<code>set</code> 的<strong>元素不会移动</strong>，所以除了被删除的那个，<strong>所有迭代器、指针、引用在插入删除后都保持有效</strong>。这是它相对 <code>vector</code> 的一大优势。</p>
+      </div>
+
+      <h3>4.4 <code>unordered_map</code>：哈希桶 + 链地址法</h3>
+      <div class="guide-ascii">桶数组（连续）
+  ┌───┬───┬───┬───┬───┐
+  │ 0 │ 1 │ 2 │ 3 │ 4 │
+  └─┬─┴───┴─┬─┴───┴─┬─┘
+    ↓       ↓       ↓
+   [k1]    [k3]    [k5]     ← 哈希冲突的元素挂成链表
+    ↓
+   [k2]</div>
+      <pre class="answer-code-block"><code>m.bucket_count();       // 桶的数量
+m.load_factor();        // = size / bucket_count（平均每桶几个元素）
+m.max_load_factor();    // 默认 1.0，超过就 rehash
+m.reserve(n);           // ★ 预留，避免多次 rehash</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">rehash 的影响（考点）</span>
+        <p><strong>迭代器全部失效</strong>，但<strong>指针 / 引用仍然有效</strong>（节点没搬家，只是重新挂到新桶上）。这和 <code>vector</code> 扩容不一样，<code>vector</code> 是连指针引用一起废掉。</p>
+      </div>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>需求</th><th>选</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>需要<strong>有序遍历</strong> / 范围查询（<code>lower_bound</code>）</td><td><code>map</code></td></tr>
+            <tr><td>纯粹按 key 查，数据量大</td><td><code>unordered_map</code></td></tr>
+            <tr><td>数据量很小（几十个）</td><td><code>map</code> 甚至 <code>vector</code> + 线性查找可能更快（cache 友好，没有 hash 计算）</td></tr>
+            <tr><td>要求<strong>最坏情况</strong>延迟稳定</td><td><code>map</code>（O(log n) 有保证；<code>unordered_map</code> 遇到 rehash 或碰撞会抖）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>最后一条对交易系统很重要：<code>unordered_map</code> 的平均 O(1) 很香，但 <strong>rehash 那一下是不可预测的长尾</strong>。热路径上要么提前 <code>reserve</code> 到位，要么用 <code>map</code>，要么自己写定长哈希表。</p>
+
+      <h3>4.5 迭代器失效总表（必背）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>容器</th><th>插入</th><th>删除</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>vector</code></td><td><strong>扩容 → 全失效</strong>；不扩容 → 插入点之后失效</td><td>删除点之后失效</td></tr>
+            <tr><td><code>deque</code></td><td>两端 → <strong>迭代器失效，但引用/指针有效</strong>；中间 → 全失效</td><td>两端 → 只失效被删的；中间 → 全失效</td></tr>
+            <tr><td><code>list</code> / <code>forward_list</code></td><td><strong>不失效</strong></td><td>只有被删的失效</td></tr>
+            <tr><td><code>map</code> / <code>set</code></td><td><strong>不失效</strong></td><td>只有被删的失效</td></tr>
+            <tr><td><code>unordered_*</code></td><td>rehash → <strong>迭代器全失效，引用/指针有效</strong></td><td>只有被删的失效</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="answer-code-block"><code>// 关联容器删除的经典安全写法
+for (auto it = m.begin(); it != m.end(); ) {
+    if (shouldRemove(it-&gt;second))
+        it = m.erase(it);      // ✓ C++11 起 erase 返回下一个迭代器
+    else
+        ++it;
+}</code></pre>
+
+      <h3>4.6 内存开销直觉</h3>
+      <div class="guide-ascii">存 100 万个 int：
+
+vector&lt;int&gt;          ≈  4 MB      ← 只有数据
+list&lt;int&gt;            ≈ 32 MB      ← 每节点 2 指针 + int + 分配器开销
+set&lt;int&gt;             ≈ 48 MB      ← 每节点 3 指针 + 颜色 + int + 开销
+unordered_set&lt;int&gt;   ≈ 24 MB      ← 桶数组 + 每节点 1 指针</div>
+      <p>差 8～12 倍。再加上 <code>vector</code> 的 cache 友好性，<strong>遍历速度能差一个数量级</strong>。所以那条老规矩仍然成立：<strong>不确定用什么容器时，先用 <code>vector</code>。</strong></p>
+
+      <h3>4.7 常见追问</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>问题</th><th>答案</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>push_back</code> 为什么是「摊还 O(1)」</td><td>2 倍扩容下 n 次插入的总搬迁是 <code>1+2+4+...+n ≈ 2n</code>，摊到每次就是常数</td></tr>
+            <tr><td><code>vector</code> 扩容用移动还是拷贝</td><td>只有元素的移动构造标了 <code>noexcept</code> 才用移动，否则为强异常安全只能拷贝（<code>std::move_if_noexcept</code>）</td></tr>
+            <tr><td><code>unordered_map</code> 一定比 <code>map</code> 快吗</td><td>不一定。小数据量时 <code>map</code> cache 局部性更好；哈希有计算开销，rehash 带来长尾；需要有序时 <code>map</code> 无可替代</td></tr>
+            <tr><td><code>std::sort</code> 用什么算法</td><td><strong>introsort</strong>：快排为主，递归过深切堆排（避免最坏 O(n²)），小区间用插入排序收尾</td></tr>
+            <tr><td><code>std::list::sort</code> 为什么不能用 <code>std::sort</code></td><td><code>std::sort</code> 要求随机访问迭代器，<code>list</code> 只有双向迭代器，所以自带归并排序成员函数</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="cheatsheet">
+      <h2>5. 一页速记</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>主题</th><th>一句话</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>内存对齐</strong></td><td>CPU 按块访存，成员偏移必须是其对齐值的倍数；成员<strong>从大到小排</strong>能省 padding</td></tr>
+            <tr><td><strong>伪共享</strong></td><td>不同变量挤在同一条 64B cache line 上，一个核写就让其他核失效；<code>alignas(64)</code> 隔开</td></tr>
+            <tr><td><strong>内存池</strong></td><td>一次性大块申请 + O(1) 链表摘挂；核心收益是<strong>消除尾延迟抖动和碎片</strong>，不是平均更快</td></tr>
+            <tr><td><strong>STL</strong></td><td><code>vector</code> 连续数组、<code>deque</code> 分段数组+中控、<code>map</code> 红黑树、<code>unordered_map</code> 桶+链；<strong>关联容器插入不失效迭代器</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./linux-sysprog-notes.html">下一篇：Linux 系统编程</a>
+        <a class="secondary-button" href="./cpp-containers-notes.html">容器与智能指针</a>
+        <a class="secondary-button" href="./index.html?category=C%2B%2B%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">去刷 C++ 知识直讲</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记，可与「容器与智能指针」「并发与线程」「Linux 系统编程」配合阅读。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./cpp-modern-notes.html">C++ 核心笔记</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>
