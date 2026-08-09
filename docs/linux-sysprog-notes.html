@@ -10,6 +10,14 @@
 </head>
 
 <body class="hundsun-page guide-page">
+  <svg class="d-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(149,179,255,.65)" /></marker>
+      <marker id="ah-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(240,86,86,.8)" /></marker>
+      <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(46,182,125,.8)" /></marker>
+      <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(255,176,32,.85)" /></marker>
+    </defs>
+  </svg>
   <main class="app-shell">
     <section class="hero hero-showcase hundsun-hero">
       <div class="hero-copy">
@@ -62,13 +70,48 @@
       </div>
 
       <h3>1.1 内核里的结构</h3>
-      <div class="guide-ascii">epoll 实例（一个 fd）
-  ├── 红黑树：存所有【注册过】的 fd     ← epoll_ctl 增删改，O(log n)
-  └── 就绪链表 rdllist：存【已就绪】的 fd
-            ↑
-      网卡数据到达 → 驱动回调 → 把对应 fd 挂进就绪链表
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 330" role="img" aria-label="epoll 实例由红黑树和就绪链表组成，网卡中断回调把就绪 fd 挂进链表，epoll_wait 只看链表">
+          <rect class="d-panel" x="20" y="20" width="410" height="200" rx="12" />
+          <text class="d-t is-sm is-dim" x="36" y="42">epoll 实例（本身也是一个 fd）</text>
 
-epoll_wait 只是【看一眼就绪链表】→ O(1)，和总连接数无关</div>
+          <rect class="d-box" x="40" y="56" width="170" height="146" rx="8" />
+          <text class="d-t is-sm is-accent" x="125" y="78" text-anchor="middle">红黑树</text>
+          <text class="d-t is-sm is-dim" x="125" y="96" text-anchor="middle">所有注册过的 fd</text>
+          <circle class="d-fill-accent" cx="125" cy="122" r="11" />
+          <circle class="d-fill-accent" cx="92" cy="154" r="11" />
+          <circle class="d-fill-accent" cx="158" cy="154" r="11" />
+          <circle class="d-fill-accent" cx="70" cy="184" r="11" />
+          <circle class="d-fill-accent" cx="180" cy="184" r="11" />
+          <line class="d-line is-faint" x1="118" y1="131" x2="99" y2="145" />
+          <line class="d-line is-faint" x1="132" y1="131" x2="151" y2="145" />
+          <line class="d-line is-faint" x1="85" y1="163" x2="76" y2="175" />
+          <line class="d-line is-faint" x1="165" y1="163" x2="174" y2="175" />
+
+          <rect class="d-box is-ok" x="230" y="56" width="180" height="146" rx="8" />
+          <text class="d-t is-sm is-ok" x="320" y="78" text-anchor="middle">就绪链表 rdllist</text>
+          <text class="d-t is-sm is-dim" x="320" y="96" text-anchor="middle">此刻真的有事的 fd</text>
+          <rect class="d-box is-ok" x="248" y="110" width="144" height="26" rx="4" />
+          <text class="d-t is-sm is-mono is-ok" x="320" y="128" text-anchor="middle">fd 7</text>
+          <rect class="d-box is-ok" x="248" y="144" width="144" height="26" rx="4" />
+          <text class="d-t is-sm is-mono is-ok" x="320" y="162" text-anchor="middle">fd 22</text>
+          <text class="d-t is-sm is-dim" x="320" y="192" text-anchor="middle">通常只有寥寥几个</text>
+
+          <text class="d-t is-sm is-gold" x="470" y="60">网卡数据到达</text>
+          <text class="d-t is-sm is-dim" x="470" y="80">硬件中断 → 驱动回调</text>
+          <path class="d-line is-gold" d="M668 92 L668 132 L416 132" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-gold" x="470" y="110">谁就绪，谁被内核主动挂上去</text>
+
+          <path class="d-line is-ok" d="M416 176 L500 176 L500 214" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-ok" x="400" y="220" width="200" height="44" rx="8" />
+          <text class="d-t is-sm is-mono is-ok" x="500" y="240" text-anchor="middle">epoll_wait()</text>
+          <text class="d-t is-sm is-dim" x="500" y="257" text-anchor="middle">只看一眼这条链表</text>
+
+          <text class="d-t is-sm" x="20" y="292">所以耗时只和<tspan class="is-ok">就绪的数量</tspan>有关，和<tspan class="is-warn">总连接数</tspan>无关 —— 一万个连接里只有 3 个有数据，就只处理这 3 个</text>
+          <text class="d-t is-sm is-dim" x="20" y="316">select / poll 是「挨个问一遍」的主动轮询；epoll 是「谁有事谁举手」的被动回调，这是量级上的差别</text>
+        </svg>
+        <figcaption>epoll 快的根本原因不是算法更巧，而是<strong>换了个方向</strong>：不再由程序去逐个询问每个连接，而是由内核在数据到达时主动把就绪的 fd 挂进链表。<code>epoll_wait</code> 于是退化成「取走链表」这一件事。</figcaption>
+      </figure>
       <p>关键区别：<strong>select/poll 是「主动轮询」，epoll 是「被动回调」</strong>。</p>
 
       <h3>1.2 三个函数</h3>
@@ -106,6 +149,46 @@ for (int i = 0; i &lt; n; ++i) {
         <p><strong>水平触发 LT</strong>（默认）：只要缓冲区里还有数据，我就一直提醒你 —— 像闹钟响个不停，直到你把事办完。<br />
           <strong>边缘触发 ET</strong>：只在「从没有到有」的那一瞬间提醒你一次 —— 像门铃只响一声，没听见就没了。</p>
       </div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 320" role="img" aria-label="同样到达 100 字节，LT 会反复通知直到读完，ET 只在数据到达那一刻通知一次">
+          <text class="d-t is-sm is-dim" x="20" y="24">场景：一次到达 100 字节，而程序每次只读走 40 字节</text>
+
+          <text class="d-t is-sm is-ok" x="20" y="76">LT</text>
+          <text class="d-t is-sm is-dim" x="20" y="94">水平触发</text>
+          <line class="d-line is-ok" x1="100" y1="86" x2="690" y2="86" marker-end="url(#ah-ok)" />
+          <path class="d-line is-gold" d="M160 52 L160 82" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M310 52 L310 82" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M460 52 L460 82" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-gold" x="160" y="44" text-anchor="middle">通知</text>
+          <text class="d-t is-sm is-gold" x="310" y="44" text-anchor="middle">又通知</text>
+          <text class="d-t is-sm is-gold" x="460" y="44" text-anchor="middle">再通知</text>
+          <text class="d-t is-sm" x="160" y="110" text-anchor="middle">读 40</text>
+          <text class="d-t is-sm is-dim" x="160" y="127" text-anchor="middle">剩 60</text>
+          <text class="d-t is-sm" x="310" y="110" text-anchor="middle">读 40</text>
+          <text class="d-t is-sm is-dim" x="310" y="127" text-anchor="middle">剩 20</text>
+          <text class="d-t is-sm" x="460" y="110" text-anchor="middle">读 20</text>
+          <text class="d-t is-sm is-dim" x="460" y="127" text-anchor="middle">剩 0</text>
+          <text class="d-t is-sm is-ok" x="600" y="110" text-anchor="middle">读干净了</text>
+          <text class="d-t is-sm is-dim" x="600" y="127" text-anchor="middle">才停止通知</text>
+
+          <line class="d-line is-faint" x1="20" y1="152" x2="700" y2="152" />
+
+          <text class="d-t is-sm is-warn" x="20" y="220">ET</text>
+          <text class="d-t is-sm is-dim" x="20" y="238">边缘触发</text>
+          <line class="d-line is-warn" x1="100" y1="230" x2="690" y2="230" marker-end="url(#ah-warn)" />
+          <path class="d-line is-gold" d="M160 196 L160 226" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-gold" x="160" y="188" text-anchor="middle">只通知这一次</text>
+          <text class="d-t is-sm" x="160" y="254" text-anchor="middle">读 40</text>
+          <text class="d-t is-sm is-warn" x="160" y="271" text-anchor="middle">剩 60</text>
+
+          <rect class="d-box is-warn" x="250" y="244" width="440" height="40" rx="8" />
+          <text class="d-t is-sm is-warn" x="470" y="269" text-anchor="middle">剩下的 60 字节还在缓冲区，但状态没有再次「由无变有」</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="308">所以 ET 必须在收到通知后<tspan class="is-ok">循环读到 EAGAIN</tspan> —— 漏读一次，这个连接就永远卡在那里</text>
+        </svg>
+        <figcaption>LT 像响个不停的闹钟，事没办完就一直吵你，因此容错性好；ET 像只响一声的门铃，<strong>通知的是「状态发生了变化」而不是「现在还有数据」</strong>。少一次系统调用的代价，是漏读一次就等于把连接挂死。</figcaption>
+      </figure>
+
       <div class="guide-table-wrap">
         <table class="guide-table">
           <thead>
@@ -161,17 +244,60 @@ while (true) {
     <article class="hundsun-panel guide-article" id="mmap">
       <h2>2. mmap · 给文件开一扇窗，不用来回搬箱子</h2>
 
-      <h3>2.1 传统 <code>read</code> 的问题</h3>
-      <div class="guide-ascii">磁盘 ──DMA──→ [内核 page cache] ──CPU 拷贝──→ [用户缓冲区] ──→ 你的代码
-                                    ↑
-                              这一次拷贝是纯浪费</div>
-      <p>每次 <code>read()</code> 还要陷入内核（系统调用开销）。读一个 10GB 的文件，就要拷贝 10GB。</p>
+      <h3>2.1 传统 <code>read</code> 与 <code>mmap</code> 的路径差别</h3>
 
-      <h3>2.2 mmap 的做法</h3>
-      <div class="guide-ascii">磁盘 ──DMA──→ [内核 page cache]
-                     ↑
-                     └── 直接映射到你的地址空间
-                         你的指针 p 就指向这里，读 p[i] 就是读文件</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 310" role="img" aria-label="read 需要从 page cache 再拷贝一份到用户缓冲区，mmap 直接把 page cache 映射进地址空间">
+          <text class="d-t is-sm is-warn" x="20" y="30">传统 read()</text>
+
+          <rect class="d-box is-muted" x="20" y="46" width="106" height="50" rx="8" />
+          <text class="d-t is-sm" x="73" y="76" text-anchor="middle">磁盘</text>
+          <path class="d-line" d="M126 71 L172 71" marker-end="url(#ah)" />
+          <text class="d-t is-sm is-dim" x="149" y="62" text-anchor="middle">DMA</text>
+
+          <rect class="d-box" x="176" y="46" width="160" height="50" rx="8" />
+          <text class="d-t is-sm is-accent" x="256" y="70" text-anchor="middle">内核 page cache</text>
+          <text class="d-t is-sm is-dim" x="256" y="87" text-anchor="middle">数据其实已经在这了</text>
+
+          <path class="d-line is-warn" d="M336 71 L392 71" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="364" y="62" text-anchor="middle">CPU 拷贝</text>
+
+          <rect class="d-box is-warn" x="396" y="46" width="150" height="50" rx="8" />
+          <text class="d-t is-sm is-warn" x="471" y="76" text-anchor="middle">用户缓冲区</text>
+          <path class="d-line" d="M546 71 L592 71" marker-end="url(#ah)" />
+          <rect class="d-box is-muted" x="596" y="46" width="104" height="50" rx="8" />
+          <text class="d-t is-sm" x="648" y="76" text-anchor="middle">你的代码</text>
+
+          <text class="d-t is-sm is-warn" x="20" y="126">多出来的这一次拷贝纯属搬运：读 10GB 文件就要多拷 10GB，而且每次 read() 还要陷一次内核</text>
+
+          <line class="d-line is-faint" x1="20" y1="152" x2="700" y2="152" />
+
+          <text class="d-t is-sm is-ok" x="20" y="184">mmap()</text>
+
+          <rect class="d-box is-muted" x="20" y="200" width="106" height="50" rx="8" />
+          <text class="d-t is-sm" x="73" y="230" text-anchor="middle">磁盘</text>
+          <path class="d-line" d="M126 225 L172 225" marker-end="url(#ah)" />
+          <text class="d-t is-sm is-dim" x="149" y="216" text-anchor="middle">DMA</text>
+
+          <rect class="d-box" x="176" y="200" width="160" height="50" rx="8" />
+          <text class="d-t is-sm is-accent" x="256" y="230" text-anchor="middle">内核 page cache</text>
+
+          <path class="d-line is-ok is-dash" d="M336 225 L392 225" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="364" y="216" text-anchor="middle">页表映射</text>
+
+          <rect class="d-box is-ghost" x="396" y="200" width="150" height="50" rx="8" />
+          <text class="d-t is-sm is-ok" x="471" y="222" text-anchor="middle">你的地址空间</text>
+          <text class="d-t is-sm is-mono is-dim" x="471" y="240" text-anchor="middle">指针 p</text>
+          <path class="d-line" d="M546 225 L592 225" marker-end="url(#ah)" />
+          <rect class="d-box is-muted" x="596" y="200" width="104" height="50" rx="8" />
+          <text class="d-t is-sm" x="648" y="230" text-anchor="middle">你的代码</text>
+
+          <text class="d-t is-sm is-ok" x="20" y="280">没有第二份数据：<tspan class="is-mono">p[i]</tspan> 读到的就是 page cache 里的那一份原件</text>
+          <text class="d-t is-sm is-dim" x="20" y="302">代价是访问未加载的页会触发缺页中断，抖动从「每次调用」挪到了「第一次访问」</text>
+        </svg>
+        <figcaption><code>read</code> 是<strong>派人去仓库把货搬到你办公室</strong>，办公室里因此多了一份完全相同的货；<code>mmap</code> 是<strong>在墙上开一扇窗直接看仓库</strong>，货始终只有一份。省下的正是那次纯搬运的 CPU 拷贝。</figcaption>
+      </figure>
+
       <div class="guide-callout is-metaphor">
         <span class="callout-label">形象比喻</span>
         <p><code>read</code> 是「派人去仓库把货搬到你办公室」；<code>mmap</code> 是「在你办公室墙上开一扇窗，直接看仓库」—— 货一直在仓库，你看的就是原件。</p>
@@ -285,6 +411,32 @@ mlock(p, SIZE);       // 锁定物理内存，绝不 swap 出去
       </div>
 
       <h3>3.2 最大的坑：handler 里几乎什么都不能做</h3>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="信号在 malloc 修改内部链表的中途打断主流程，处理函数里再次调用 malloc 会破坏数据结构">
+          <text class="d-t is-sm is-dim" x="20" y="22">主流程正在执行</text>
+          <line class="d-line" x1="20" y1="36" x2="700" y2="36" marker-end="url(#ah)" />
+          <rect class="d-box" x="60" y="52" width="120" height="36" rx="6" />
+          <text class="d-t is-sm is-accent" x="120" y="75" text-anchor="middle">业务代码</text>
+          <rect class="d-box is-gold" x="220" y="52" width="200" height="36" rx="6" />
+          <text class="d-t is-sm is-gold" x="320" y="75" text-anchor="middle">malloc 正在改内部链表</text>
+          <rect class="d-box is-ghost" x="470" y="52" width="150" height="36" rx="6" />
+          <text class="d-t is-sm is-dim" x="545" y="75" text-anchor="middle">还没轮到执行</text>
+
+          <path class="d-line is-warn" d="M320 120 L320 92" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="320" y="140" text-anchor="middle">信号就在这一刻插进来（链表正处在半改完的状态）</text>
+
+          <rect class="d-box is-warn" x="150" y="162" width="420" height="76" rx="10" />
+          <text class="d-t is-sm is-warn" x="360" y="186" text-anchor="middle">信号处理函数</text>
+          <text class="d-t is-sm is-mono" x="360" y="208" text-anchor="middle">printf(...)  →  内部又要 malloc</text>
+          <text class="d-t is-sm is-warn" x="360" y="228" text-anchor="middle">撞上那条改到一半的链表 → 崩溃或死锁</text>
+
+          <text class="d-t is-sm is-ok" x="20" y="270">正确做法：处理函数里<tspan class="is-mono">只写一个标志位</tspan>或<tspan class="is-mono">往管道写一个字节</tspan>，真正的活儿留给主循环去干</text>
+          <text class="d-t is-sm is-dim" x="20" y="292">能在这个上下文里安全调用的函数很少，白名单见 man 7 signal-safety</text>
+        </svg>
+        <figcaption>信号不是「另一个线程」，而是<strong>在当前线程的任意两条指令之间强行插入执行</strong>。它可能正好打断 <code>malloc</code>、<code>printf</code> 这类持有内部状态的函数 —— 此时处理函数里再调用同一个函数，等于让它撞上自己改到一半的数据结构。</figcaption>
+      </figure>
+
       <div class="guide-callout is-warn">
         <span class="callout-label">易踩坑</span>
         <pre class="answer-code-block"><code>void handler(int sig) {
@@ -448,10 +600,39 @@ echo 0x33 &gt; /proc/self/coredump_filter
 if (p) { /* 居然成功了！机器只有 16GB */ }
 
 memset(p, 0, ...);   // ← 真正写的时候才崩</code></pre>
-      <div class="guide-ascii">malloc 成功  =  内核给了你一段【虚拟地址空间】的欠条
-                （只改了页表映射，一个物理页都没给）
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="malloc 只划出虚拟地址空间，物理内存要等到第一次写入触发缺页中断时才真正分配">
+          <text class="d-t is-sm is-accent" x="180" y="26" text-anchor="middle">虚拟地址空间（随便画）</text>
+          <text class="d-t is-sm is-warn" x="540" y="26" text-anchor="middle">物理内存（真金白银）</text>
 
-第一次写某一页  →  触发缺页中断  →  这时才真正分配【物理内存】</div>
+          <rect class="d-panel" x="20" y="40" width="320" height="120" rx="10" />
+          <rect class="d-box" x="36" y="56" width="288" height="88" rx="6" />
+          <text class="d-t is-sm is-accent" x="180" y="94" text-anchor="middle">malloc(100GB) 成功返回</text>
+          <text class="d-t is-sm is-dim" x="180" y="118" text-anchor="middle">只是改了页表，记下「这段地址归你」</text>
+
+          <rect class="d-panel" x="400" y="40" width="300" height="120" rx="10" />
+          <rect class="d-box is-ghost" x="416" y="56" width="268" height="88" rx="6" />
+          <text class="d-t is-sm is-dim" x="550" y="106" text-anchor="middle">此刻一个物理页都还没给</text>
+
+          <path class="d-line is-dash" d="M340 100 L396 100" marker-end="url(#ah)" />
+          <text class="d-t is-sm is-dim" x="368" y="90" text-anchor="middle">空</text>
+
+          <path class="d-line is-gold" d="M180 160 L180 196" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-gold" x="196" y="182">第一次真的往这段内存里写</text>
+
+          <rect class="d-box is-gold" x="36" y="200" width="288" height="52" rx="8" />
+          <text class="d-t is-sm is-gold" x="180" y="222" text-anchor="middle">缺页中断</text>
+          <text class="d-t is-sm is-dim" x="180" y="240" text-anchor="middle">内核这时才去找真正的物理页</text>
+
+          <path class="d-line is-gold" d="M324 226 L412 226" marker-end="url(#ah-gold)" />
+          <rect class="d-box is-warn" x="416" y="200" width="268" height="52" rx="8" />
+          <text class="d-t is-sm is-warn" x="550" y="222" text-anchor="middle">找不到 → OOM Killer 出手</text>
+          <text class="d-t is-sm is-dim" x="550" y="240" text-anchor="middle">SIGKILL，没有清理、没有 core</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="288">所以内存真的耗尽时，你等到的不是 malloc 返回 NULL，而是程序跑到一半凭空消失</text>
+        </svg>
+        <figcaption>Linux 默认允许 <strong>overcommit</strong>：<code>malloc</code> 成功只是一张欠条，物理内存要等第一次写入才兑现。这解释了一个反直觉的现象 —— 内存不足的报应不落在申请的那一行，而落在很久以后某次普通的赋值上。</figcaption>
+      </figure>
       <p>理由是大多数程序申请了内存并不会全用（比如 <code>fork</code> 之后的写时复制）。<strong>后果</strong>：内存真的不够时，<strong>不是 <code>malloc</code> 返回 NULL</strong>，而是<strong>运行到一半突然被杀</strong>。</p>
       <pre class="answer-code-block"><code>cat /proc/sys/vm/overcommit_memory
 #  0 = 启发式判断（默认）

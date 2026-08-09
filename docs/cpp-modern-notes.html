@@ -10,6 +10,14 @@
 </head>
 
 <body class="hundsun-page guide-page">
+  <svg class="d-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(149,179,255,.65)" /></marker>
+      <marker id="ah-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(240,86,86,.8)" /></marker>
+      <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(46,182,125,.8)" /></marker>
+      <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(255,176,32,.85)" /></marker>
+    </defs>
+  </svg>
   <main class="app-shell">
     <section class="hero hero-showcase hundsun-hero">
       <div class="hero-copy">
@@ -82,6 +90,30 @@
           </tbody>
         </table>
       </div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 250" role="img" aria-label="左值有名字且之后还会被用到，右值是即将消失的临时对象，因此可以安全地掏空">
+          <rect class="d-box" x="20" y="36" width="320" height="150" rx="12" />
+          <text class="d-t is-lg is-accent" x="180" y="64" text-anchor="middle">左值</text>
+          <text class="d-t is-sm is-dim" x="180" y="88" text-anchor="middle">有名字，后面还会被用到</text>
+          <rect class="d-box is-muted" x="44" y="104" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="180" y="125" text-anchor="middle">Order order;　order</text>
+          <text class="d-t is-sm is-warn" x="180" y="160" text-anchor="middle">不能随便掏空</text>
+          <text class="d-t is-sm is-dim" x="180" y="178" text-anchor="middle">掏空了后面那行就用到残骸了</text>
+
+          <rect class="d-box is-ok" x="380" y="36" width="320" height="150" rx="12" />
+          <text class="d-t is-lg is-ok" x="540" y="64" text-anchor="middle">右值</text>
+          <text class="d-t is-sm is-dim" x="540" y="88" text-anchor="middle">临时的，这一行结束就消失</text>
+          <rect class="d-box is-muted" x="404" y="104" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="540" y="125" text-anchor="middle">Order{}　std::move(order)</text>
+          <text class="d-t is-sm is-ok" x="540" y="160" text-anchor="middle">可以安全掏空</text>
+          <text class="d-t is-sm is-dim" x="540" y="178" text-anchor="middle">反正没人会再看它一眼</text>
+
+          <text class="d-t is-sm is-dim" x="360" y="218" text-anchor="middle"><tspan class="is-mono">&amp;</tspan> 绑左值　　<tspan class="is-mono">&amp;&amp;</tspan> 绑右值</text>
+          <text class="d-t is-sm is-gold" x="360" y="240" text-anchor="middle">区分它们的意义就在于：编译器由此知道什么时候可以「搬」而不是「抄」</text>
+        </svg>
+        <figcaption>右值引用之所以存在，是为了给编译器一个<strong>判断依据</strong>：这个对象马上就要消失了，所以搬走它的资源是安全的。C++11 之前没有这个信息，大临时对象就只能老老实实深拷贝。</figcaption>
+      </figure>
+
       <p><strong>为什么要设计 <code>&amp;&amp;</code>：</strong>C++11 之前临时大对象往往只能拷贝；右值引用允许“资源搬走”而不是深拷贝，支撑移动语义和低延迟场景。运算符语境下 <code>&amp;</code> 是按位与，<code>&amp;&amp;</code> 是逻辑与（短路），与引用不是同一话题。</p>
     </article>
 
@@ -115,6 +147,38 @@
 void wrapper(T&amp;&amp; arg) {
     sink(std::forward&lt;T&gt;(arg));
 }</code></pre>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 270" role="img" aria-label="参数一旦有了名字就变成左值，直接传下去会丢失右值信息，std::forward 依据推导出的 T 把值类别还原">
+          <text class="d-t is-sm is-warn" x="20" y="24">直接写 sink(arg)：右值信息在中间层丢失</text>
+          <rect class="d-box is-ok" x="20" y="38" width="170" height="42" rx="8" />
+          <text class="d-t is-sm is-ok" x="105" y="64" text-anchor="middle">调用方传入右值</text>
+          <path class="d-line" d="M190 59 L236 59" marker-end="url(#ah)" />
+          <rect class="d-box is-warn" x="240" y="38" width="230" height="42" rx="8" />
+          <text class="d-t is-sm is-warn" x="355" y="58" text-anchor="middle">wrapper 里的 arg</text>
+          <text class="d-t is-sm is-dim" x="355" y="74" text-anchor="middle">有名字了，就成了左值</text>
+          <path class="d-line is-warn" d="M470 59 L516 59" marker-end="url(#ah-warn)" />
+          <rect class="d-box is-warn" x="520" y="38" width="180" height="42" rx="8" />
+          <text class="d-t is-sm is-warn" x="610" y="64" text-anchor="middle">sink 收到左值 → 拷贝</text>
+
+          <line class="d-line is-faint" x1="20" y1="108" x2="700" y2="108" />
+
+          <text class="d-t is-sm is-ok" x="20" y="136">用 std::forward&lt;T&gt;(arg)：按原样还原</text>
+          <rect class="d-box is-ok" x="20" y="150" width="170" height="42" rx="8" />
+          <text class="d-t is-sm is-ok" x="105" y="176" text-anchor="middle">调用方传入右值</text>
+          <path class="d-line is-ok" d="M190 171 L236 171" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-gold" x="240" y="150" width="230" height="42" rx="8" />
+          <text class="d-t is-sm is-mono is-gold" x="355" y="170" text-anchor="middle">forward&lt;T&gt;(arg)</text>
+          <text class="d-t is-sm is-dim" x="355" y="186" text-anchor="middle">T 里记着它原本是什么</text>
+          <path class="d-line is-ok" d="M470 171 L516 171" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-ok" x="520" y="150" width="180" height="42" rx="8" />
+          <text class="d-t is-sm is-ok" x="610" y="176" text-anchor="middle">sink 收到右值 → 移动</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="228">传左值进来时，同一份代码会把它继续当左值转发下去 —— 这就是「有条件」的含义</text>
+          <text class="d-t is-sm is-gold" x="20" y="252"><tspan class="is-mono">move</tspan> 是无条件转成右值，<tspan class="is-mono">forward</tspan> 是原样奉还 —— 这是两者唯一的区别</text>
+        </svg>
+        <figcaption>关键点是那句反直觉的规则：<strong>只要有名字，它就是左值</strong>。哪怕参数声明成 <code>T&amp;&amp;</code>，函数体里的 <code>arg</code> 也已经是个左值了。<code>std::forward</code> 的作用就是查一下推导出的 <code>T</code>，把丢掉的值类别重新贴回去。</figcaption>
+      </figure>
+
       <p>若写成 <code>sink(arg)</code>：有名字的 <code>arg</code> 永远是左值，右值信息会丢。<code>forward</code> 依赖推导出的 <code>T</code> 把左/右值恢复出来。</p>
     </article>
 
@@ -277,6 +341,28 @@ v.emplace_back(42); // 对：直接构造，不依赖隐式转换
       <p>捕获成功了，但默认 <code>operator()</code> 是 const，不能改按值捕获的副本。应：</p>
       <pre class="answer-code-block"><code>auto f = [x]() mutable { return ++x; }; // 改副本
 auto g = [&amp;x]() { return ++x; };        // 改外面的 x</code></pre>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 285" role="img" aria-label="lambda 会被编译器变成一个匿名类，按值捕获把变量存成成员，按引用捕获只存地址因而可能悬空">
+          <rect class="d-box is-gold" x="250" y="24" width="220" height="42" rx="8" />
+          <text class="d-t is-sm is-mono is-gold" x="360" y="50" text-anchor="middle">[x, &amp;y](int a){ … }</text>
+          <path class="d-line is-gold" d="M360 66 L360 92" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-dim" x="380" y="86">编译器把它变成一个匿名类</text>
+
+          <rect class="d-panel" x="150" y="96" width="420" height="120" rx="12" />
+          <text class="d-t is-sm is-dim" x="360" y="120" text-anchor="middle">这个类长这样</text>
+          <rect class="d-box is-ok" x="172" y="132" width="180" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-ok" x="262" y="153" text-anchor="middle">成员：x 的副本</text>
+          <rect class="d-box is-warn" x="368" y="132" width="180" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-warn" x="458" y="153" text-anchor="middle">成员：y 的地址</text>
+          <rect class="d-box" x="172" y="174" width="376" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="360" y="195" text-anchor="middle">operator()(int a) const { … }</text>
+
+          <text class="d-t is-sm is-ok" x="20" y="244">按值捕获：自带一份副本，跑到哪儿都安全</text>
+          <text class="d-t is-sm is-warn" x="20" y="268">按引用捕获：只记了个地址，原变量一旦离开作用域，这个 lambda 就成了定时炸弹</text>
+        </svg>
+        <figcaption>lambda 不是什么魔法，就是<strong>编译器替你写的一个带 <code>operator()</code> 的类</strong>。捕获列表决定这个类有哪些成员 —— 这一点想通了，两件事就自然明白了：为什么按值捕获的变量默认改不了（<code>operator()</code> 是 <code>const</code>，得加 <code>mutable</code>），以及为什么按引用捕获在异步回调里那么危险。</figcaption>
+      </figure>
+
       <h3>坑</h3>
       <ul>
         <li>异步回调里 <code>[&amp;局部变量]</code> → 悬空</li>

@@ -10,6 +10,14 @@
 </head>
 
 <body class="hundsun-page guide-page">
+  <svg class="d-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(149,179,255,.65)" /></marker>
+      <marker id="ah-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(240,86,86,.8)" /></marker>
+      <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(46,182,125,.8)" /></marker>
+      <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(255,176,32,.85)" /></marker>
+    </defs>
+  </svg>
   <main class="app-shell">
     <section class="hero hero-showcase hundsun-hero">
       <div class="hero-copy">
@@ -56,13 +64,39 @@
         <p>① 甲走过去，门开着 → 进去，反锁（<code>lock()</code>）；② 乙走过来，门锁着 → 在门口等（阻塞）；③ 甲办完事，开锁出来（<code>unlock()</code>）；④ 乙进去，反锁……</p>
       </div>
 
-      <div class="guide-ascii">        ┌─────────────┐
-        │   卫生间     │  ← 共享数据（同一时刻只能一个人用）
-        │  (共享数据)  │
-        └──────┬──────┘
-               │ 🔒 门锁          ← mutex
-               │
-    😀 😐 😑 😠  ← 排队的线程</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 250" role="img" aria-label="共享数据像一间单人卫生间，mutex 是门锁，拿到锁的线程进去，其他线程在门口排队">
+          <rect class="d-box is-ok" x="440" y="40" width="260" height="110" rx="12" />
+          <text class="d-t is-lg is-ok" x="570" y="76" text-anchor="middle">共享数据</text>
+          <text class="d-t is-sm is-dim" x="570" y="100" text-anchor="middle">同一时刻只允许一个线程在里面</text>
+          <text class="d-t is-sm is-mono is-dim" x="570" y="126" text-anchor="middle">balance / queue / map</text>
+
+          <rect class="d-box is-gold" x="330" y="70" width="86" height="50" rx="8" />
+          <text class="d-t is-sm is-gold" x="373" y="92" text-anchor="middle">门锁</text>
+          <text class="d-t is-sm is-mono is-gold" x="373" y="110" text-anchor="middle">mutex</text>
+          <path class="d-line is-gold" d="M416 95 L436 95" marker-end="url(#ah-gold)" />
+
+          <rect class="d-box" x="180" y="70" width="110" height="50" rx="8" />
+          <text class="d-t is-sm is-accent" x="235" y="92" text-anchor="middle">线程 A</text>
+          <text class="d-t is-sm is-ok" x="235" y="110" text-anchor="middle">拿到钥匙</text>
+          <path class="d-line is-ok" d="M290 95 L326 95" marker-end="url(#ah-ok)" />
+
+          <rect class="d-box is-muted" x="20" y="52" width="120" height="34" rx="6" />
+          <text class="d-t is-sm is-dim" x="80" y="74" text-anchor="middle">线程 B 等待</text>
+          <rect class="d-box is-muted" x="20" y="94" width="120" height="34" rx="6" />
+          <text class="d-t is-sm is-dim" x="80" y="116" text-anchor="middle">线程 C 等待</text>
+          <rect class="d-box is-muted" x="20" y="136" width="120" height="34" rx="6" />
+          <text class="d-t is-sm is-dim" x="80" y="158" text-anchor="middle">线程 D 等待</text>
+          <text class="d-t is-sm is-dim" x="80" y="192" text-anchor="middle">在门口排队</text>
+
+          <path class="d-line is-dash" d="M140 69 L176 88" />
+          <path class="d-line is-dash" d="M140 111 L176 102" />
+          <path class="d-line is-dash" d="M140 153 L176 116" />
+
+          <text class="d-t is-sm is-dim" x="20" y="228">A 出来（<tspan class="is-mono">unlock</tspan>）之前，B/C/D 一个都进不去；A 一放钥匙，它们再去争这把锁</text>
+        </svg>
+        <figcaption>互斥量的名字来自 <em>mutual exclusion</em>，作用就是把「同时」变成「排队」。<strong>门里的那段时间就是临界区</strong> —— 它越长，排队的人越多，并发度就越低。</figcaption>
+      </figure>
 
       <div class="guide-table-wrap">
         <table class="guide-table">
@@ -82,13 +116,38 @@
 
       <h3>1.1 不加锁会怎样？<code>count++</code> 的真相</h3>
       <p>你以为 <code>count++</code> 是一步，其实 CPU 要做<strong>三步</strong>：读进寄存器 → 加 1 → 写回内存。两个线程同时执行时可能这样交错：</p>
-      <div class="guide-ascii">初始 count = 100
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 265" role="img" aria-label="两个线程的读改写三步交错执行，导致两次自增只生效一次">
+          <text class="d-t is-sm is-dim" x="20" y="22">初始 count = 100</text>
+          <line class="d-line is-faint" x1="20" y1="36" x2="700" y2="36" marker-end="url(#ah)" />
+          <text class="d-t is-sm is-dim" x="660" y="28">时间</text>
 
-时间 →
-线程A:  读到100  ┄┄┄┄┄┄┄┄┄  改成101   写回101
-线程B:  ┄┄┄┄┄  读到100   改成101  ┄┄┄┄┄  写回101
-                                              ↓
-                            最终 count = 101（应该是 102！）</div>
+          <text class="d-t is-sm is-accent" x="20" y="86">线程 A</text>
+          <rect class="d-box" x="100" y="64" width="110" height="36" rx="6" />
+          <text class="d-t is-sm is-accent" x="155" y="87" text-anchor="middle">读到 100</text>
+          <rect class="d-box" x="250" y="64" width="110" height="36" rx="6" />
+          <text class="d-t is-sm is-accent" x="305" y="87" text-anchor="middle">算出 101</text>
+          <rect class="d-box" x="400" y="64" width="110" height="36" rx="6" />
+          <text class="d-t is-sm is-accent" x="455" y="87" text-anchor="middle">写回 101</text>
+
+          <text class="d-t is-sm is-gold" x="20" y="150">线程 B</text>
+          <rect class="d-box is-gold" x="180" y="128" width="110" height="36" rx="6" />
+          <text class="d-t is-sm is-gold" x="235" y="151" text-anchor="middle">读到 100</text>
+          <rect class="d-box is-gold" x="330" y="128" width="110" height="36" rx="6" />
+          <text class="d-t is-sm is-gold" x="385" y="151" text-anchor="middle">算出 101</text>
+          <rect class="d-box is-gold" x="480" y="128" width="110" height="36" rx="6" />
+          <text class="d-t is-sm is-gold" x="535" y="151" text-anchor="middle">写回 101</text>
+
+          <path class="d-line is-warn is-dash" d="M235 124 L235 104" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="243" y="118">A 还没写回，B 读到的仍是旧值</text>
+
+          <rect class="d-box is-warn" x="180" y="196" width="360" height="52" rx="10" />
+          <text class="d-t is-sm is-warn" x="360" y="218" text-anchor="middle">最终 count = 101</text>
+          <text class="d-t is-sm is-dim" x="360" y="238" text-anchor="middle">两次自增，只生效了一次</text>
+          <path class="d-line is-warn" d="M535 168 L535 192" marker-end="url(#ah-warn)" />
+        </svg>
+        <figcaption><code>count++</code> 看着是一步，实际是<strong>读、改、写三步</strong>。一旦两个线程的三步交错，后写回的那个会把前一个的结果直接覆盖掉 —— 更新就这么丢了。加锁的意义，就是让这三步中途不被插队。</figcaption>
+      </figure>
       <p><strong>丢了一次更新</strong>，这就是<strong>数据竞争（data race）</strong>—— 相当于两个人同时挤进同一个隔间，互相把对方的事搅黄了。加锁之后，A 的「读-改-写」三步走完之前，B 根本进不来。</p>
 
       <h3>1.2 最反直觉的一点：锁保护的不是数据，是「约定」</h3>
@@ -189,6 +248,33 @@ void good() {
 newNode-&gt;prev = cur;
 cur-&gt;next-&gt;prev = newNode;   // ← 这几步中间，不变量是【被破坏】的
 cur-&gt;next = newNode;         // ← 到这里才恢复</code></pre>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 270" role="img" aria-label="临界区必须覆盖不变量被破坏到重新成立的整个区间，锁外的解析和 IO 不该被圈进来">
+          <text class="d-t is-sm is-dim" x="20" y="24">一次下单处理的时间线</text>
+
+          <rect class="d-box is-muted" x="20" y="72" width="150" height="44" rx="8" />
+          <text class="d-t is-sm is-dim" x="95" y="92" text-anchor="middle">解析报文</text>
+          <text class="d-t is-sm is-dim" x="95" y="109" text-anchor="middle">不碰共享数据</text>
+
+          <rect class="d-box is-warn" x="190" y="72" width="290" height="44" rx="8" />
+          <text class="d-t is-sm is-warn" x="335" y="92" text-anchor="middle">改写共享的订单表</text>
+          <text class="d-t is-sm is-dim" x="335" y="109" text-anchor="middle">改到一半时，结构是断裂的</text>
+
+          <rect class="d-box is-muted" x="500" y="72" width="200" height="44" rx="8" />
+          <text class="d-t is-sm is-dim" x="600" y="92" text-anchor="middle">发往交易所</text>
+          <text class="d-t is-sm is-dim" x="600" y="109" text-anchor="middle">耗时 IO</text>
+
+          <path class="d-line is-ok" d="M190 142 L190 160 L480 160 L480 142" />
+          <text class="d-t is-sm is-ok" x="335" y="180" text-anchor="middle">临界区就该正好是这一段</text>
+          <text class="d-t is-sm is-dim" x="335" y="200" text-anchor="middle">从不变量被破坏，到不变量重新成立</text>
+
+          <path class="d-line is-warn is-dash" d="M20 232 L700 232" />
+          <text class="d-t is-sm is-warn" x="360" y="224" text-anchor="middle">若图省事直接锁到函数结尾，这段 IO 也被圈进来 —— 功能仍对，吞吐塌方</text>
+          <text class="d-t is-sm is-dim" x="360" y="258" text-anchor="middle">锁的持有时间，直接决定了系统能并行到什么程度</text>
+        </svg>
+        <figcaption><strong>临界区必须完整覆盖「破坏 → 恢复」的整个过程</strong>，但也仅限于这一段。判断依据不是「哪一行写了变量」，而是「从哪儿开始别人看到的数据是不自洽的，到哪儿又重新自洽」。</figcaption>
+      </figure>
+
       <p><strong>临界区必须完整覆盖「破坏 → 恢复」的整个过程</strong>。此时若别的线程闯进来遍历链表，看到的就是一个断裂的结构。这个标准比「哪一行写了变量」更本质。</p>
 
       <h3>2.3 划错的两种典型错误</h3>
@@ -440,20 +526,49 @@ private:
       <p><code>defer_lock</code> 的主要用途就是配合 <code>std::lock</code> —— 因为 <code>std::lock</code> 需要自己控制加锁顺序，所以构造时必须先别锁上。</p>
 
       <h3>5.3 <code>std::lock</code> 怎么避免死锁</h3>
-      <div class="guide-ascii">死锁是怎么来的：
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="两个线程按相反顺序加锁形成循环等待，std::lock 通过失败即全部放手来打破环">
+          <text class="d-t is-sm is-warn" x="20" y="24">死锁是怎么形成的：两边加锁顺序相反</text>
 
-// 线程 A                    // 线程 B
-lock(muA);                   lock(muB);
-lock(muB);   ← 卡住          lock(muA);   ← 卡住
+          <rect class="d-box is-warn" x="60" y="40" width="150" height="44" rx="8" />
+          <text class="d-t is-sm is-warn" x="135" y="60" text-anchor="middle">线程 A</text>
+          <text class="d-t is-sm is-mono is-dim" x="135" y="77" text-anchor="middle">先 muA 后 muB</text>
 
-两边各持有一把、各等对方一把，永久互等。</div>
-      <p>标准只规定 <code>std::lock</code>「用一种避免死锁的算法」，实现上典型是<strong>「全有或全无 + 回退重试」</strong>：</p>
-      <div class="guide-ascii">1. 阻塞式锁住第 1 把
-2. 对剩下的逐个 try_lock
-3. 只要有一把 try_lock 失败：
-     → 把已经拿到的【全部释放】
-     → 以刚才失败的那把作为新的「第 1 把」，回到步骤 1
-4. 全部拿到 → 返回</div>
+          <rect class="d-box is-warn" x="440" y="40" width="150" height="44" rx="8" />
+          <text class="d-t is-sm is-warn" x="515" y="60" text-anchor="middle">线程 B</text>
+          <text class="d-t is-sm is-mono is-dim" x="515" y="77" text-anchor="middle">先 muB 后 muA</text>
+
+          <rect class="d-box is-gold" x="60" y="150" width="150" height="40" rx="8" />
+          <text class="d-t is-sm is-mono is-gold" x="135" y="175" text-anchor="middle">muA</text>
+          <rect class="d-box is-gold" x="440" y="150" width="150" height="40" rx="8" />
+          <text class="d-t is-sm is-mono is-gold" x="515" y="175" text-anchor="middle">muB</text>
+
+          <path class="d-line is-ok" d="M100 88 L100 146" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="20" y="122">已持有</text>
+          <path class="d-line is-ok" d="M550 88 L550 146" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="600" y="122">已持有</text>
+
+          <path class="d-line is-warn" d="M210 70 L432 158" marker-end="url(#ah-warn)" />
+          <path class="d-line is-warn" d="M440 70 L218 158" marker-end="url(#ah-warn)" />
+          <rect class="d-mask" x="248" y="94" width="154" height="46" rx="8" />
+          <rect class="d-box is-warn" x="248" y="94" width="154" height="46" rx="8" />
+          <text class="d-t is-sm is-warn" x="325" y="113" text-anchor="middle">各自攥着一把</text>
+          <text class="d-t is-sm is-warn" x="325" y="132" text-anchor="middle">又都在等对方</text>
+
+          <line class="d-line is-faint" x1="20" y1="216" x2="700" y2="216" />
+
+          <text class="d-t is-sm is-ok" x="20" y="244">std::lock 的破环办法：只要有一把没拿到，就把已经拿到的<tspan class="is-ok">全部松手</tspan>再重来</text>
+          <rect class="d-box is-ok" x="20" y="256" width="200" height="34" rx="6" />
+          <text class="d-t is-sm is-ok" x="120" y="278" text-anchor="middle">锁住第一把</text>
+          <path class="d-line is-ok" d="M220 273 L246 273" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-ok" x="250" y="256" width="200" height="34" rx="6" />
+          <text class="d-t is-sm is-ok" x="350" y="278" text-anchor="middle">其余逐个 try_lock</text>
+          <path class="d-line is-ok" d="M450 273 L476 273" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-ok" x="480" y="256" width="220" height="34" rx="6" />
+          <text class="d-t is-sm is-ok" x="590" y="278" text-anchor="middle">有一把失败 → 全放手重来</text>
+        </svg>
+        <figcaption>死锁的四个必要条件里，最容易打破的是<strong>「占有并等待」</strong>。<code>std::lock</code> 正是从这里下手：宁可全部松手重来，也绝不攥着一把去等另一把，所以永远形不成环。工程上更简单的做法是<strong>全局约定一个固定的加锁顺序</strong>。</figcaption>
+      </figure>
       <p>关键在于<strong>失败时立刻全部放手</strong>，不会「攥着一把等另一把」，所以不会形成循环等待。</p>
       <pre class="answer-code-block"><code>std::unique_lock&lt;std::mutex&gt; l1(muA, std::defer_lock);
 std::unique_lock&lt;std::mutex&gt; l2(muB, std::defer_lock);
@@ -667,13 +782,38 @@ private:
 
       <h3>9.1 核心概念：共享状态</h3>
       <p><code>future</code> 从不单独存在，它总是和一个<strong>写入端</strong>配对，两者共享一块堆上的「共享状态」：</p>
-      <div class="guide-ascii">       写入端                 共享状态                读取端
-  ┌──────────────┐      ┌───────────────┐      ┌──────────────┐
-  │ promise      │      │ 值 or 异常    │      │              │
-  │ packaged_task│ ───→ │ 是否就绪      │ ───→ │ future&lt;T&gt;    │
-  │ async        │      │ 等待队列      │      │              │
-  └──────────────┘      └───────────────┘      └──────────────┘
-   set_value()                                     get()</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 250" role="img" aria-label="promise 与 future 通过堆上的共享状态配对，写入端放值，读取端取值">
+          <text class="d-t is-sm is-dim" x="110" y="26" text-anchor="middle">写入端（生产结果）</text>
+          <text class="d-t is-sm is-gold" x="360" y="26" text-anchor="middle">共享状态（堆上的一块）</text>
+          <text class="d-t is-sm is-dim" x="610" y="26" text-anchor="middle">读取端（消费结果）</text>
+
+          <rect class="d-box" x="20" y="42" width="180" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="110" y="64" text-anchor="middle">promise</text>
+          <rect class="d-box" x="20" y="84" width="180" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="110" y="106" text-anchor="middle">packaged_task</text>
+          <rect class="d-box" x="20" y="126" width="180" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="110" y="148" text-anchor="middle">async</text>
+
+          <rect class="d-box is-gold" x="270" y="42" width="180" height="118" rx="10" />
+          <text class="d-t is-sm is-gold" x="360" y="70" text-anchor="middle">值 或 异常</text>
+          <text class="d-t is-sm is-gold" x="360" y="96" text-anchor="middle">是否已就绪</text>
+          <text class="d-t is-sm is-gold" x="360" y="122" text-anchor="middle">等待中的线程</text>
+          <text class="d-t is-sm is-dim" x="360" y="148" text-anchor="middle">引用计数管理生命周期</text>
+
+          <rect class="d-box is-ok" x="520" y="76" width="180" height="50" rx="8" />
+          <text class="d-t is-sm is-mono is-ok" x="610" y="106" text-anchor="middle">future&lt;T&gt;</text>
+
+          <path class="d-line" d="M200 101 L266 101" marker-end="url(#ah)" />
+          <text class="d-t is-sm is-mono is-dim" x="233" y="92" text-anchor="middle">set_value</text>
+          <path class="d-line is-ok" d="M450 101 L516 101" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-mono is-dim" x="483" y="92" text-anchor="middle">get</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="200">值还没到时 <tspan class="is-mono">get()</tspan> 会阻塞；值一旦放进共享状态，等待的线程就被唤醒</text>
+          <text class="d-t is-sm is-dim" x="20" y="224">异常也会被存进同一块状态里，在 <tspan class="is-mono">get()</tspan> 处重新抛出 —— 所以跨线程的错误不会悄悄丢失</text>
+        </svg>
+        <figcaption><code>future</code> 从不单独存在，它总是和一个写入端<strong>共享堆上的同一块状态</strong>。这块状态既装结果也装异常，还负责唤醒等待者 —— 因此跨线程传递错误才能像同步代码一样自然。</figcaption>
+      </figure>
       <div class="guide-table-wrap">
         <table class="guide-table">
           <thead>

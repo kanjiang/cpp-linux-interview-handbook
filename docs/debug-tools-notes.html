@@ -10,6 +10,14 @@
 </head>
 
 <body class="hundsun-page guide-page">
+  <svg class="d-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(149,179,255,.65)" /></marker>
+      <marker id="ah-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(240,86,86,.8)" /></marker>
+      <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(46,182,125,.8)" /></marker>
+      <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(255,176,32,.85)" /></marker>
+    </defs>
+  </svg>
   <main class="app-shell">
     <section class="hero hero-showcase hundsun-hero">
       <div class="hero-copy">
@@ -50,6 +58,56 @@
         <span class="callout-label">核心思路</span>
         <p>调试最耗时的从来不是「用工具」，而是<strong>选错了工具</strong>。先把现象归类，工具自然就定了。</p>
       </div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 262" role="img" aria-label="按四类症状分流到不同调试工具：进程没了、卡住不动、CPU 打满、结果不对">
+          <text class="d-t is-sm is-dim" x="360" y="20" text-anchor="middle">先给现象归类，工具基本就定了</text>
+
+          <rect class="d-box is-warn" x="20" y="32" width="164" height="40" rx="8" />
+          <text class="d-t is-sm is-warn" x="102" y="57" text-anchor="middle">进程没了</text>
+          <path class="d-line is-warn" d="M102 72 L102 92" marker-end="url(#ah-warn)" />
+          <rect class="d-box is-muted" x="20" y="96" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="102" y="116" text-anchor="middle">有 core</text>
+          <text class="d-t is-sm is-mono is-dim" x="102" y="134" text-anchor="middle">gdb ./prog core</text>
+          <rect class="d-box is-muted" x="20" y="152" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="102" y="172" text-anchor="middle">没有 core</text>
+          <text class="d-t is-sm is-mono is-dim" x="102" y="190" text-anchor="middle">dmesg 查 OOM</text>
+
+          <rect class="d-box is-gold" x="192" y="32" width="164" height="40" rx="8" />
+          <text class="d-t is-sm is-gold" x="274" y="57" text-anchor="middle">卡住不动</text>
+          <path class="d-line is-gold" d="M274 72 L274 92" marker-end="url(#ah-gold)" />
+          <rect class="d-box is-muted" x="192" y="96" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="274" y="116" text-anchor="middle">拿全部线程栈</text>
+          <text class="d-t is-sm is-mono is-dim" x="274" y="134" text-anchor="middle">pstack PID</text>
+          <rect class="d-box is-muted" x="192" y="152" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="274" y="172" text-anchor="middle">都停在加锁上</text>
+          <text class="d-t is-sm is-dim" x="274" y="190" text-anchor="middle">= 死锁</text>
+
+          <rect class="d-box" x="364" y="32" width="164" height="40" rx="8" />
+          <text class="d-t is-sm is-accent" x="446" y="57" text-anchor="middle">CPU 打满</text>
+          <path class="d-line" d="M446 72 L446 92" marker-end="url(#ah)" />
+          <rect class="d-box is-muted" x="364" y="96" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="446" y="116" text-anchor="middle">先看实时热点</text>
+          <text class="d-t is-sm is-mono is-dim" x="446" y="134" text-anchor="middle">perf top</text>
+          <rect class="d-box is-muted" x="364" y="152" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="446" y="172" text-anchor="middle">再抓一段细看</text>
+          <text class="d-t is-sm is-mono is-dim" x="446" y="190" text-anchor="middle">record → 火焰图</text>
+
+          <rect class="d-box is-ok" x="536" y="32" width="164" height="40" rx="8" />
+          <text class="d-t is-sm is-ok" x="618" y="57" text-anchor="middle">结果不对</text>
+          <path class="d-line is-ok" d="M618 72 L618 92" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-muted" x="536" y="96" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="618" y="116" text-anchor="middle">能重新编译</text>
+          <text class="d-t is-sm is-mono is-dim" x="618" y="134" text-anchor="middle">ASan / TSan</text>
+          <rect class="d-box is-muted" x="536" y="152" width="164" height="48" rx="8" />
+          <text class="d-t is-sm" x="618" y="172" text-anchor="middle">只有二进制</text>
+          <text class="d-t is-sm is-mono is-dim" x="618" y="190" text-anchor="middle">valgrind</text>
+
+          <line class="d-line is-faint" x1="20" y1="220" x2="700" y2="220" />
+          <text class="d-t is-sm is-dim" x="360" y="248" text-anchor="middle">还有一类容易漏：慢但 CPU 不高 —— 时间花在等待上，该查锁和 IO，不该翻热点函数</text>
+        </svg>
+        <figcaption>这张图回答的是「从哪儿下手」。<strong>崩溃看现场、卡住看线程栈、烧 CPU 看热点、结果不对看内存与竞争</strong> —— 归类花一分钟，能省下几小时的乱试。</figcaption>
+      </figure>
+
       <div class="guide-table-wrap">
         <table class="guide-table">
           <thead>
@@ -129,6 +187,36 @@ break vec.cpp:42 if i &gt; 10000 &amp;&amp; ptr == nullptr</code></pre>
 
       <h3>2.4 观察点 watchpoint —— 「到底是谁改了我的变量」</h3>
       <p>这是 gdb 最被低估的功能。变量莫名其妙变成了脏值，用它一步到位：</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 270" role="img" aria-label="观察点让 CPU 盯住一块内存，任何写入都会中断程序并打印改前改后的值和调用栈">
+          <rect class="d-box is-gold" x="270" y="24" width="180" height="46" rx="8" />
+          <text class="d-t is-sm is-gold" x="360" y="44" text-anchor="middle">被盯住的那块内存</text>
+          <text class="d-t is-sm is-mono is-dim" x="360" y="61" text-anchor="middle">g_config.timeout</text>
+
+          <rect class="d-box is-muted" x="20" y="110" width="150" height="40" rx="6" />
+          <text class="d-t is-sm is-dim" x="95" y="135" text-anchor="middle">正常赋值</text>
+          <rect class="d-box is-muted" x="190" y="110" width="150" height="40" rx="6" />
+          <text class="d-t is-sm is-dim" x="265" y="135" text-anchor="middle">某个回调里改</text>
+          <rect class="d-box is-warn" x="380" y="110" width="150" height="40" rx="6" />
+          <text class="d-t is-sm is-warn" x="455" y="135" text-anchor="middle">越界写踩到</text>
+          <rect class="d-box is-muted" x="550" y="110" width="150" height="40" rx="6" />
+          <text class="d-t is-sm is-dim" x="625" y="135" text-anchor="middle">memset 覆盖</text>
+
+          <path class="d-line" d="M95 106 L300 76" marker-end="url(#ah)" />
+          <path class="d-line" d="M265 106 L340 76" marker-end="url(#ah)" />
+          <path class="d-line is-warn" d="M455 106 L400 76" marker-end="url(#ah-warn)" />
+          <path class="d-line" d="M625 106 L440 76" marker-end="url(#ah)" />
+          <text class="d-t is-sm is-dim" x="360" y="98" text-anchor="middle">不管从哪条路径写进来</text>
+
+          <rect class="d-box is-ok" x="130" y="186" width="460" height="66" rx="10" />
+          <text class="d-t is-sm is-ok" x="360" y="208" text-anchor="middle">程序立刻停下</text>
+          <text class="d-t is-sm is-mono is-dim" x="360" y="228" text-anchor="middle">Old value = 3000　　New value = 0</text>
+          <text class="d-t is-sm is-dim" x="360" y="245" text-anchor="middle">再敲一个 bt，写入者的调用栈就完整地摆在眼前</text>
+          <path class="d-line is-ok" d="M360 154 L360 182" marker-end="url(#ah-ok)" />
+        </svg>
+        <figcaption>观察点盯的是<strong>地址</strong>而不是变量名，所以无论从哪条代码路径写进来都逃不掉。它把「全代码搜索谁改了这个字段」变成跑一次就拿到调用栈 —— 对间接赋值满天飞的老代码尤其管用。</figcaption>
+      </figure>
       <pre class="answer-code-block"><code>watch  g_counter        # 值【被修改】时停下，并打印【改前改后】的值
 rwatch g_counter        # 被【读取】时停下
 awatch g_counter        # 读或写都停
@@ -276,15 +364,40 @@ pstack &lt;pid&gt;          # 或 gstack / eu-stack
 
 # 或者
 gdb -p &lt;pid&gt; -batch -ex "thread apply all bt" -ex detach</code></pre>
-      <div class="guide-ascii">看栈的判读方法：
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 290" role="img" aria-label="两个线程各持有一把锁又在等对方那把，形成环形等待，这就是死锁">
+          <rect class="d-box is-warn" x="60" y="40" width="180" height="52" rx="10" />
+          <text class="d-t is-sm is-warn" x="150" y="62" text-anchor="middle">Thread 3</text>
+          <text class="d-t is-sm is-mono is-dim" x="150" y="80" text-anchor="middle">Account::transfer</text>
 
-Thread 3:  __lll_lock_wait → pthread_mutex_lock → Account::transfer  ← 卡在等锁 A
-Thread 5:  __lll_lock_wait → pthread_mutex_lock → Account::refund    ← 卡在等锁 B
+          <rect class="d-box is-warn" x="480" y="40" width="180" height="52" rx="10" />
+          <text class="d-t is-sm is-warn" x="570" y="62" text-anchor="middle">Thread 5</text>
+          <text class="d-t is-sm is-mono is-dim" x="570" y="80" text-anchor="middle">Account::refund</text>
 
-→ 两个线程都停在 lock 上 = 典型死锁
-→ 再看各自持有哪把锁（p mutex 或看代码路径），确认是 A→B / B→A 交叉
+          <rect class="d-box is-gold" x="60" y="186" width="180" height="52" rx="10" />
+          <text class="d-t is-sm is-gold" x="150" y="208" text-anchor="middle">锁 A</text>
+          <text class="d-t is-sm is-dim" x="150" y="226" text-anchor="middle">已被 Thread 3 持有</text>
 
-若多数线程停在 epoll_wait / cv.wait → 不是死锁，是没活干或没被唤醒（漏 notify）</div>
+          <rect class="d-box is-gold" x="480" y="186" width="180" height="52" rx="10" />
+          <text class="d-t is-sm is-gold" x="570" y="208" text-anchor="middle">锁 B</text>
+          <text class="d-t is-sm is-dim" x="570" y="226" text-anchor="middle">已被 Thread 5 持有</text>
+
+          <path class="d-line is-ok" d="M110 96 L110 182" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="20" y="146">持有</text>
+          <path class="d-line is-ok" d="M610 96 L610 182" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="666" y="146">持有</text>
+
+          <path class="d-line is-warn" d="M240 74 L470 196" marker-end="url(#ah-warn)" />
+          <path class="d-line is-warn" d="M480 74 L250 196" marker-end="url(#ah-warn)" />
+          <rect class="d-mask" x="292" y="108" width="136" height="48" rx="8" />
+          <rect class="d-box is-warn" x="292" y="108" width="136" height="48" rx="8" />
+          <text class="d-t is-sm is-warn" x="360" y="128" text-anchor="middle">等待对方那把</text>
+          <text class="d-t is-sm is-warn" x="360" y="147" text-anchor="middle">谁都不先松手</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="270">栈上的特征：两个线程都停在 <tspan class="is-mono">__lll_lock_wait → pthread_mutex_lock</tspan>，形成一个环 —— 这就是死锁</text>
+        </svg>
+        <figcaption>判读的关键是<strong>找环</strong>：先看谁停在加锁上，再看它此前已经持有哪把锁。如果线程都停在 <code>epoll_wait</code> 或 <code>cv.wait</code> 上，那不是死锁，而是没活干或漏了 <code>notify</code>。</figcaption>
+      </figure>
 
       <h3>剧本 C · 「谁改了我的变量」</h3>
       <pre class="answer-code-block"><code>gdb ./prog
@@ -323,6 +436,43 @@ bt                            # ← 凶手的调用栈就在这</code></pre>
         <span class="callout-label">形象比喻</span>
         <p>Sanitizer 是<strong>编译期给你的代码埋满摄像头</strong>：每次读写内存、每次加解锁都被记录。一旦有人越界或竞争，当场抓现行 —— 而不是等半小时后在别处崩掉。代价是程序变慢、变胖。</p>
       </div>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 290" role="img" aria-label="ASan 在每块分配的内存周围放置红区，越界写入立刻被拦下，而普通构建下越界要等很久才在别处崩溃">
+          <text class="d-t is-sm is-warn" x="20" y="26">普通构建：越界写不会当场出事</text>
+          <rect class="d-box is-muted" x="20" y="38" width="150" height="44" rx="6" />
+          <text class="d-t is-sm is-dim" x="95" y="65" text-anchor="middle">你的数组</text>
+          <rect class="d-box is-muted" x="170" y="38" width="180" height="44" rx="6" />
+          <text class="d-t is-sm is-dim" x="260" y="65" text-anchor="middle">隔壁对象的数据</text>
+          <path class="d-line is-warn" d="M150 100 L200 86" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="150" y="116" text-anchor="middle">越界写</text>
+          <path class="d-line is-warn is-dash" d="M370 60 L470 60" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-dim" x="420" y="50" text-anchor="middle">很久以后</text>
+          <rect class="d-box is-warn" x="474" y="38" width="226" height="44" rx="6" />
+          <text class="d-t is-sm is-warn" x="587" y="65" text-anchor="middle">在毫不相干的地方崩溃</text>
+          <text class="d-t is-sm is-dim" x="20" y="140">gdb 看到的现场，早就不是案发现场了</text>
+
+          <line class="d-line is-faint" x1="20" y1="160" x2="700" y2="160" />
+
+          <text class="d-t is-sm is-ok" x="20" y="188">开了 ASan：分配的内存被红区包起来</text>
+          <rect class="d-box is-warn" x="20" y="200" width="56" height="44" rx="6" />
+          <text class="d-t is-sm is-warn" x="48" y="227" text-anchor="middle">红区</text>
+          <rect class="d-box is-ok" x="76" y="200" width="150" height="44" rx="6" />
+          <text class="d-t is-sm is-ok" x="151" y="227" text-anchor="middle">你的数组</text>
+          <rect class="d-box is-warn" x="226" y="200" width="56" height="44" rx="6" />
+          <text class="d-t is-sm is-warn" x="254" y="227" text-anchor="middle">红区</text>
+          <rect class="d-box is-muted" x="282" y="200" width="150" height="44" rx="6" />
+          <text class="d-t is-sm is-dim" x="357" y="227" text-anchor="middle">隔壁对象</text>
+
+          <path class="d-line is-ok" d="M180 268 L246 250" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="150" y="282" text-anchor="middle">同一次越界写</text>
+          <path class="d-line is-ok" d="M440 222 L494 222" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-ok" x="498" y="200" width="202" height="44" rx="6" />
+          <text class="d-t is-sm is-ok" x="599" y="220" text-anchor="middle">当场停下并报告</text>
+          <text class="d-t is-sm is-dim" x="599" y="238" text-anchor="middle">出事处 + 分配处 + 释放处</text>
+        </svg>
+        <figcaption>ASan 的价值不在于「能发现越界」，而在于<strong>把发现的时刻提前到越界发生的那一瞬间</strong>。它在每块分配的内存前后插入红区哨兵，任何踩进红区的读写都会立刻中断，并同时给出出事、分配、释放三处调用栈。</figcaption>
+      </figure>
 
       <div class="guide-table-wrap">
         <table class="guide-table">
@@ -458,17 +608,39 @@ perf record -F 99 -g -p &lt;pid&gt; -- sleep 30
 perf script &gt; out.perf
 ./FlameGraph/stackcollapse-perf.pl out.perf &gt; out.folded
 ./FlameGraph/flamegraph.pl out.folded &gt; flame.svg</code></pre>
-      <div class="guide-ascii">火焰图怎么看：
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 285" role="img" aria-label="火焰图的横轴是占用 CPU 的比例，纵轴是调用深度，最宽的平顶就是优化目标">
+          <text class="d-t is-sm is-dim" x="20" y="24">横轴 = 占用 CPU 的比例（不是时间轴）　纵轴 = 调用深度</text>
 
-  ┌─────────────────────────────────────┐
-  │            main                     │  ← 宽度 = 占用 CPU 的【比例】
-  ├──────────────┬──────────────────────┤
-  │ parseMsg     │   matchOrder         │  ← Y 轴 = 调用【深度】，不是时间
-  ├────┬─────────┼──────┬───────────────┤
-  │... │ memcpy  │ ...  │  std::map::find│  ← 【顶部平顶】= 真正在烧 CPU 的地方
-  └────┴─────────┴──────┴───────────────┘
+          <rect class="d-box" x="20" y="196" width="600" height="34" rx="3" />
+          <text class="d-t is-sm is-mono is-accent" x="320" y="218" text-anchor="middle">main</text>
 
-规则：从上往下找【最宽的平顶】，那就是优化的第一目标。</div>
+          <rect class="d-box" x="20" y="158" width="220" height="34" rx="3" />
+          <text class="d-t is-sm is-mono is-accent" x="130" y="180" text-anchor="middle">parseMsg</text>
+          <rect class="d-box" x="244" y="158" width="376" height="34" rx="3" />
+          <text class="d-t is-sm is-mono is-accent" x="432" y="180" text-anchor="middle">matchOrder</text>
+
+          <rect class="d-box is-muted" x="20" y="120" width="80" height="34" rx="3" />
+          <text class="d-t is-sm is-mono is-dim" x="60" y="142" text-anchor="middle">…</text>
+          <rect class="d-box is-gold" x="104" y="120" width="136" height="34" rx="3" />
+          <text class="d-t is-sm is-mono is-gold" x="172" y="142" text-anchor="middle">memcpy</text>
+          <rect class="d-box is-muted" x="244" y="120" width="90" height="34" rx="3" />
+          <text class="d-t is-sm is-mono is-dim" x="289" y="142" text-anchor="middle">…</text>
+          <rect class="d-box is-warn" x="338" y="120" width="282" height="34" rx="3" />
+          <text class="d-t is-sm is-mono is-warn" x="479" y="142" text-anchor="middle">std::map::find</text>
+
+          <path class="d-line is-warn" d="M479 82 L479 116" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="479" y="74" text-anchor="middle">最宽的平顶 = 优化的第一目标</text>
+          <text class="d-t is-sm is-dim" x="479" y="56" text-anchor="middle">它上面没有更高的方块，说明时间就烧在它自己身上</text>
+
+          <path class="d-line is-faint" d="M636 213 L680 213" />
+          <text class="d-t is-sm is-dim" x="640" y="196">越宽越费</text>
+          <text class="d-t is-sm is-dim" x="640" y="240">CPU</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="268">同一层里方块的左右顺序只是按名字排的，不代表谁先执行 —— 别把横轴当成时间线</text>
+        </svg>
+        <figcaption>火焰图把几十万条采样压成一张图。看法只有一条：<strong>找最宽的平顶</strong> —— 又宽（占 CPU 多）又没有子调用（时间花在它自己身上）的那一块。前提是编译时加了 <code>-fno-omit-frame-pointer</code>，否则调用栈是断的，图会碎成一地。</figcaption>
+      </figure>
       <div class="guide-callout is-warn">
         <span class="callout-label">前提</span>
         <p>必须编译时加 <code>-fno-omit-frame-pointer</code>，否则 <code>-g</code> 抓到的调用栈是断的。或者用 <code>perf record --call-graph dwarf</code>（更准但开销大）。</p>

@@ -10,6 +10,14 @@
 </head>
 
 <body class="hundsun-page guide-page">
+  <svg class="d-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(149,179,255,.65)" /></marker>
+      <marker id="ah-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(240,86,86,.8)" /></marker>
+      <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(46,182,125,.8)" /></marker>
+      <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(255,176,32,.85)" /></marker>
+    </defs>
+  </svg>
   <main class="app-shell">
     <section class="hero hero-showcase hundsun-hero">
       <div class="hero-copy">
@@ -46,16 +54,39 @@
         <p>CPU 读内存不是「你要几个字节就读几个字节」，而是<strong>按固定大小的块整块搬</strong>（通常 4 或 8 字节，一条 cache line 是 64 字节）。内存被划成一格一格的停车位，一辆车正好停进一格就一次读完；横跨两格就得读两次再拼起来。</p>
       </div>
 
-      <div class="guide-ascii">内存被划成一格一格（假设每格 4 字节）：
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 250" role="img" aria-label="内存按 4 字节分格，对齐的 int 一次读完，未对齐的 int 横跨两格需要读两次">
+          <text class="d-t is-sm is-dim" x="20" y="26">内存被划成一格一格，每格 4 字节 = CPU 一次访存的粒度</text>
 
-  ┌────┬────┬────┬────┐
-  │ 0  │ 4  │ 8  │ 12 │
-  └────┴────┴────┴────┘
+          <rect class="d-box is-muted" x="20" y="40" width="120" height="42" rx="6" />
+          <rect class="d-box is-muted" x="140" y="40" width="120" height="42" rx="6" />
+          <rect class="d-box is-muted" x="260" y="40" width="120" height="42" rx="6" />
+          <rect class="d-box is-muted" x="380" y="40" width="120" height="42" rx="6" />
+          <text class="d-t is-sm is-dim is-mono" x="20" y="100">0</text>
+          <text class="d-t is-sm is-dim is-mono" x="140" y="100">4</text>
+          <text class="d-t is-sm is-dim is-mono" x="260" y="100">8</text>
+          <text class="d-t is-sm is-dim is-mono" x="380" y="100">12</text>
+          <text class="d-t is-sm is-dim is-mono" x="500" y="100">16</text>
 
-对齐的 int（地址 4）：      [....int....]      ← 一次读完 ✓
-未对齐的 int（地址 6）：       [..int..]        ← 横跨两格，读两次再拼 ✗
-                        ┌────┬────┐
-                        │ 4  │ 8  │</div>
+          <line class="d-line is-faint" x1="140" y1="40" x2="140" y2="248" />
+          <line class="d-line is-faint" x1="380" y1="40" x2="380" y2="248" />
+          <line class="d-line is-faint" x1="260" y1="40" x2="260" y2="200" />
+          <line class="d-line is-faint" x1="260" y1="238" x2="260" y2="248" />
+
+          <text class="d-t is-sm is-ok" x="20" y="153">对齐</text>
+          <rect class="d-box is-ok" x="140" y="130" width="120" height="36" rx="6" />
+          <text class="d-t is-sm is-mono is-ok" x="200" y="153" text-anchor="middle">int</text>
+          <text class="d-t is-sm" x="516" y="145">放在地址 4</text>
+          <text class="d-t is-sm is-ok" x="516" y="164">✓ 一次访存读完</text>
+
+          <text class="d-t is-sm is-warn" x="20" y="223">未对齐</text>
+          <rect class="d-box is-warn" x="200" y="200" width="120" height="36" rx="6" />
+          <text class="d-t is-sm is-mono is-warn" x="260" y="223" text-anchor="middle">int</text>
+          <text class="d-t is-sm" x="516" y="215">放在地址 6</text>
+          <text class="d-t is-sm is-warn" x="516" y="234">✗ 跨界，读两次</text>
+        </svg>
+        <figcaption>硬件搬运内存的最小单位是「一格」。<strong>对齐</strong>的数据正好躺在一格内，一次访存就取回；<strong>未对齐</strong>的数据骑在两格之间，CPU 必须读两次再把两半拼起来，代价直接翻倍。</figcaption>
+      </figure>
 
       <h3>1.1 不对齐的后果</h3>
       <ul>
@@ -79,6 +110,48 @@ struct B {          // sizeof = 8  ← 只是换了个顺序，省了 33%
     // 2 字节填充
     int   b;        // 偏移 4
 };</code></pre>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 235" role="img" aria-label="struct A 与 struct B 的内存布局对比，只调换成员顺序就把 12 字节压到 8 字节">
+          <text class="d-t is-sm is-dim is-mono" x="100" y="22">字节偏移</text>
+          <text class="d-t is-sm is-dim is-mono" x="122" y="44" text-anchor="middle">0</text>
+          <text class="d-t is-sm is-dim is-mono" x="298" y="44" text-anchor="middle">4</text>
+          <text class="d-t is-sm is-dim is-mono" x="474" y="44" text-anchor="middle">8</text>
+          <text class="d-t is-sm is-dim is-mono" x="628" y="44" text-anchor="middle">12</text>
+
+          <text class="d-t is-sm" x="20" y="76">struct A</text>
+          <text class="d-t is-sm is-warn" x="20" y="94">12 字节</text>
+          <rect class="d-box is-gold" x="100" y="54" width="44" height="44" rx="5" />
+          <text class="d-t is-sm is-gold is-mono" x="122" y="81" text-anchor="middle">a</text>
+          <rect class="d-box is-ghost" x="144" y="54" width="132" height="44" rx="5" />
+          <text class="d-t is-sm is-dim" x="210" y="81" text-anchor="middle">填充 3</text>
+          <rect class="d-box" x="276" y="54" width="176" height="44" rx="5" />
+          <text class="d-t is-sm is-accent is-mono" x="364" y="81" text-anchor="middle">b (int)</text>
+          <rect class="d-box is-gold" x="452" y="54" width="44" height="44" rx="5" />
+          <text class="d-t is-sm is-gold is-mono" x="474" y="81" text-anchor="middle">c</text>
+          <rect class="d-box is-ghost" x="496" y="54" width="132" height="44" rx="5" />
+          <text class="d-t is-sm is-dim" x="562" y="81" text-anchor="middle">填充 3</text>
+          <text class="d-t is-sm is-dim" x="644" y="81">尾部也要补齐</text>
+
+          <text class="d-t is-sm" x="20" y="172">struct B</text>
+          <text class="d-t is-sm is-ok" x="20" y="190">8 字节</text>
+          <rect class="d-box is-gold" x="100" y="150" width="44" height="44" rx="5" />
+          <text class="d-t is-sm is-gold is-mono" x="122" y="177" text-anchor="middle">a</text>
+          <rect class="d-box is-gold" x="144" y="150" width="44" height="44" rx="5" />
+          <text class="d-t is-sm is-gold is-mono" x="166" y="177" text-anchor="middle">c</text>
+          <rect class="d-box is-ghost" x="188" y="150" width="88" height="44" rx="5" />
+          <text class="d-t is-sm is-dim" x="232" y="177" text-anchor="middle">填充 2</text>
+          <rect class="d-box" x="276" y="150" width="176" height="44" rx="5" />
+          <text class="d-t is-sm is-accent is-mono" x="364" y="177" text-anchor="middle">b (int)</text>
+          <text class="d-t is-sm is-ok" x="468" y="177">省下 4 字节 · 33%</text>
+
+          <line class="d-line is-dash" x1="276" y1="98" x2="276" y2="150" />
+          <text class="d-t is-sm is-dim" x="284" y="126">两种排法里，int 都必须落在 4 的倍数上 —— 这是 padding 的唯一原因</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="222">同样三个成员，把小的挤在一起、大的整块放，尾部填充就消失了</text>
+        </svg>
+        <figcaption><strong>padding 不是编译器浪费内存，而是在替成员找对齐位置。</strong>把 <code>char</code> 挤在一起、<code>int</code> 整块放，中间和尾部的填充就消失了。百万级订单对象上，这个顺序差异就是几十 MB。</figcaption>
+      </figure>
 
       <div class="guide-table-wrap">
         <table class="guide-table">
@@ -137,10 +210,33 @@ Counters c;
 // 线程1：for (...) ++c.a;
 // 线程2：for (...) ++c.b;</code></pre>
       <p>逻辑上零冲突，<strong>实测可能比单线程还慢 5～10 倍</strong>。底层原因是 <strong>MESI 缓存一致性协议</strong>：</p>
-      <div class="guide-ascii">核心0 写 a  →  核心1 上那条 line 被标记 Invalid
-核心1 写 b  →  发现自己的 line 失效了，要重新从核心0/内存拉回来
-              →  同时把核心0 的标记为 Invalid
-              →  无限循环，总线被"缓存乒乓"打满</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="两个核心分别写同一条 cache line 上的不同变量，导致缓存行在两者之间反复失效">
+          <rect class="d-panel" x="20" y="20" width="200" height="70" rx="10" />
+          <text class="d-t" x="120" y="48" text-anchor="middle">核心 0</text>
+          <text class="d-t is-sm is-dim is-mono" x="120" y="70" text-anchor="middle">只写 c.a</text>
+
+          <rect class="d-panel" x="500" y="20" width="200" height="70" rx="10" />
+          <text class="d-t" x="600" y="48" text-anchor="middle">核心 1</text>
+          <text class="d-t is-sm is-dim is-mono" x="600" y="70" text-anchor="middle">只写 c.b</text>
+
+          <rect class="d-box is-warn" x="200" y="150" width="320" height="66" rx="10" />
+          <text class="d-t is-sm is-warn" x="360" y="140" text-anchor="middle">同一条 cache line（64 字节）</text>
+          <rect class="d-box" x="216" y="164" width="140" height="38" rx="6" />
+          <text class="d-t is-sm is-accent is-mono" x="286" y="188" text-anchor="middle">a</text>
+          <rect class="d-box" x="364" y="164" width="140" height="38" rx="6" />
+          <text class="d-t is-sm is-accent is-mono" x="434" y="188" text-anchor="middle">b</text>
+
+          <path class="d-line is-warn" d="M120 90 L120 130 L280 130 L280 160" marker-end="url(#ah-warn)" />
+          <path class="d-line is-warn" d="M600 90 L600 130 L440 130 L440 160" marker-end="url(#ah-warn)" />
+
+          <path class="d-line is-warn is-dash" d="M200 240 L520 240" marker-start="url(#ah-warn)" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="360" y="232" text-anchor="middle">缓存乒乓</text>
+          <text class="d-t is-sm is-dim" x="360" y="262" text-anchor="middle">核心 0 一写，核心 1 手里那份整行作废，必须重新拉回来；反过来也一样</text>
+          <text class="d-t is-sm is-warn" x="360" y="286" text-anchor="middle">代码里一把锁都没有，跑起来却像在激烈抢锁</text>
+        </svg>
+        <figcaption>a 和 b 是两个互不相干的变量，但它们<strong>挤在同一条 cache line 上</strong>。缓存一致性协议只认「行」不认「变量」，于是任何一方的写入都会让对方整行失效 —— 这就是伪共享。</figcaption>
+      </figure>
 
       <h3>2.2 解决办法：把它们隔开</h3>
       <pre class="answer-code-block"><code>struct alignas(64) PaddedCounter {
@@ -160,6 +256,32 @@ struct Counters {
         <li><code>hardware_destructive_interference_size</code>：<strong>要分开</strong>的最小距离（避免伪共享）</li>
         <li><code>hardware_constructive_interference_size</code>：<strong>要凑近</strong>的最大距离（希望一起被加载）</li>
       </ul>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 200" role="img" aria-label="alignas 64 把两个变量分别推到独立的 cache line 上，两个核心互不干扰">
+          <rect class="d-panel" x="20" y="20" width="180" height="56" rx="10" />
+          <text class="d-t is-sm" x="110" y="44" text-anchor="middle">核心 0</text>
+          <text class="d-t is-sm is-dim is-mono" x="110" y="64" text-anchor="middle">写 a</text>
+
+          <rect class="d-panel" x="520" y="20" width="180" height="56" rx="10" />
+          <text class="d-t is-sm" x="610" y="44" text-anchor="middle">核心 1</text>
+          <text class="d-t is-sm is-dim is-mono" x="610" y="64" text-anchor="middle">写 b</text>
+
+          <rect class="d-box is-ok" x="20" y="112" width="300" height="56" rx="10" />
+          <text class="d-t is-sm is-ok" x="170" y="136" text-anchor="middle">cache line #1（独占 64 字节）</text>
+          <text class="d-t is-sm is-mono is-dim" x="170" y="156" text-anchor="middle">a + 自动补足的填充</text>
+
+          <rect class="d-box is-ok" x="400" y="112" width="300" height="56" rx="10" />
+          <text class="d-t is-sm is-ok" x="550" y="136" text-anchor="middle">cache line #2（独占 64 字节）</text>
+          <text class="d-t is-sm is-mono is-dim" x="550" y="156" text-anchor="middle">b + 自动补足的填充</text>
+
+          <path class="d-line is-ok" d="M110 76 L110 108" marker-end="url(#ah-ok)" />
+          <path class="d-line is-ok" d="M610 76 L610 108" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="360" y="145" text-anchor="middle">互不干扰</text>
+          <text class="d-t is-sm is-dim" x="360" y="192" text-anchor="middle">用空间换时间：多花几十字节填充，换回接近线性的多核扩展性</text>
+        </svg>
+        <figcaption><code>alignas(64)</code> 的作用是<strong>把两个变量强行推到不同的 cache line 上</strong>。代价是每个计数器都膨胀到 64 字节，收益是彻底消除缓存乒乓 —— 在多核高频写的场景下这笔账几乎总是划算的。</figcaption>
+      </figure>
 
       <h3>2.3 哪些场景要警惕</h3>
       <div class="guide-table-wrap">
@@ -214,6 +336,48 @@ struct Counters {
 
       <h3>3.2 最简单的实现：固定大小对象池</h3>
       <p>核心技巧：<strong>空闲块自己存下一个空闲块的地址</strong>（侵入式链表），所以额外开销为 0。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 290" role="img" aria-label="内存池一次性申请大块并切成等长槽位，空闲槽位用侵入式链表串起来，分配与释放都是常数时间">
+          <text class="d-t is-sm is-dim" x="20" y="24">启动时一次性向系统要一大块，之后再也不找系统要</text>
+
+          <rect class="d-panel" x="20" y="38" width="680" height="70" rx="10" />
+          <rect class="d-box" x="34" y="52" width="78" height="42" rx="5" />
+          <text class="d-t is-sm is-accent" x="73" y="78" text-anchor="middle">已用</text>
+          <rect class="d-box" x="118" y="52" width="78" height="42" rx="5" />
+          <text class="d-t is-sm is-accent" x="157" y="78" text-anchor="middle">已用</text>
+          <rect class="d-box is-muted" x="202" y="52" width="78" height="42" rx="5" />
+          <text class="d-t is-sm is-dim" x="241" y="78" text-anchor="middle">空闲</text>
+          <rect class="d-box is-muted" x="286" y="52" width="78" height="42" rx="5" />
+          <text class="d-t is-sm is-dim" x="325" y="78" text-anchor="middle">空闲</text>
+          <rect class="d-box" x="370" y="52" width="78" height="42" rx="5" />
+          <text class="d-t is-sm is-accent" x="409" y="78" text-anchor="middle">已用</text>
+          <rect class="d-box is-muted" x="454" y="52" width="78" height="42" rx="5" />
+          <text class="d-t is-sm is-dim" x="493" y="78" text-anchor="middle">空闲</text>
+          <rect class="d-box is-muted" x="538" y="52" width="78" height="42" rx="5" />
+          <text class="d-t is-sm is-dim" x="577" y="78" text-anchor="middle">空闲</text>
+          <rect class="d-box is-muted" x="622" y="52" width="64" height="42" rx="5" />
+          <text class="d-t is-sm is-dim" x="654" y="78" text-anchor="middle">空闲</text>
+
+          <text class="d-t is-sm is-gold" x="20" y="140">freeHead</text>
+          <path class="d-line is-gold" d="M78 132 L241 132 L241 100" marker-end="url(#ah-gold)" />
+
+          <path class="d-line is-gold" d="M241 150 Q283 178 325 150" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M325 150 Q409 190 493 150" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M493 150 Q535 178 577 150" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M577 150 Q615 176 654 150" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-gold" x="360" y="212" text-anchor="middle">空闲块自己存着「下一个空闲块」的地址 —— 不需要任何额外管理内存</text>
+
+          <rect class="d-box is-ok" x="20" y="234" width="330" height="44" rx="8" />
+          <text class="d-t is-sm is-ok" x="185" y="252" text-anchor="middle">分配 = 摘下链表头</text>
+          <text class="d-t is-sm is-dim" x="185" y="270" text-anchor="middle">无查找、无系统调用、无锁 · O(1)</text>
+
+          <rect class="d-box is-ok" x="370" y="234" width="330" height="44" rx="8" />
+          <text class="d-t is-sm is-ok" x="535" y="252" text-anchor="middle">释放 = 挂回链表头</text>
+          <text class="d-t is-sm is-dim" x="535" y="270" text-anchor="middle">不合并、不整理、不还给系统 · O(1)</text>
+        </svg>
+        <figcaption>通用 <code>malloc</code> 慢在「每次都要现找一块合适的」。内存池把这件事提前做完：<strong>大块一次要来，切成等长槽位，空闲的用指针串成一条链</strong>。之后分配和释放都退化成摘链表头和挂链表头，延迟稳定且可预测。</figcaption>
+      </figure>
       <pre class="answer-code-block"><code>class OrderPool {
 public:
     explicit OrderPool(size_t n) {
@@ -331,14 +495,76 @@ v.push_back(1);                       // 零 malloc
         </table>
       </div>
 
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 275" role="img" aria-label="vector 元素连续排列缓存友好，list 节点散落各处每次跳转都可能 cache miss">
+          <text class="d-t is-sm" x="20" y="34"><tspan class="is-mono is-accent">vector</tspan></text>
+          <text class="d-t is-sm is-dim" x="20" y="52">连续</text>
+          <path class="d-line is-ok" d="M120 30 L120 22 L448 22 L448 30" />
+          <text class="d-t is-sm is-ok" x="284" y="14" text-anchor="middle">取第一个元素时，同一条 cache line 上的邻居被顺带带回来</text>
+          <rect class="d-box" x="120" y="36" width="76" height="40" rx="5" />
+          <rect class="d-box" x="202" y="36" width="76" height="40" rx="5" />
+          <rect class="d-box" x="284" y="36" width="76" height="40" rx="5" />
+          <rect class="d-box" x="366" y="36" width="76" height="40" rx="5" />
+          <rect class="d-box is-muted" x="448" y="36" width="76" height="40" rx="5" />
+          <rect class="d-box is-muted" x="530" y="36" width="76" height="40" rx="5" />
+          <text class="d-t is-sm is-ok" x="620" y="61">几乎全命中</text>
+
+          <line class="d-line is-faint" x1="20" y1="104" x2="700" y2="104" />
+
+          <text class="d-t is-sm" x="20" y="142"><tspan class="is-mono is-warn">list</tspan></text>
+          <text class="d-t is-sm is-dim" x="20" y="160">散落</text>
+          <rect class="d-box is-warn" x="120" y="126" width="68" height="34" rx="5" />
+          <rect class="d-box is-warn" x="330" y="196" width="68" height="34" rx="5" />
+          <rect class="d-box is-warn" x="196" y="212" width="68" height="34" rx="5" />
+          <rect class="d-box is-warn" x="470" y="124" width="68" height="34" rx="5" />
+          <rect class="d-box is-warn" x="596" y="198" width="68" height="34" rx="5" />
+          <path class="d-line is-warn is-dash" d="M188 148 Q270 150 330 205" marker-end="url(#ah-warn)" />
+          <path class="d-line is-warn is-dash" d="M330 222 Q300 240 264 232" marker-end="url(#ah-warn)" />
+          <path class="d-line is-warn is-dash" d="M264 218 Q380 150 470 142" marker-end="url(#ah-warn)" />
+          <path class="d-line is-warn is-dash" d="M538 148 Q600 160 620 194" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="360" y="268" text-anchor="middle">每次跟着 next 跳，都可能落到一个全新的地址上 —— 又是一次 cache miss</text>
+        </svg>
+        <figcaption><strong>纸面复杂度和实测性能经常对不上。</strong><code>list</code> 的中间插入是 O(1)、<code>vector</code> 是 O(n)，但真实遍历里 <code>vector</code> 常常快出一个数量级 —— 因为现代 CPU 最怕的不是多算几次，而是等内存。</figcaption>
+      </figure>
+
       <h3>4.2 <code>deque</code>：最容易被问倒的那个</h3>
       <p>很多人以为 <code>deque</code> 是「双向链表」，其实是<strong>分段数组 + 一个指针数组做索引</strong>：</p>
-      <div class="guide-ascii">        中控 map（一个指针数组）
-        ┌───┬───┬───┬───┐
-        │ * │ * │ * │ * │
-        └─┬─┴─┬─┴─┬─┴─┬─┘
-          ↓   ↓   ↓   ↓
-        [块] [块] [块] [块]   每块是固定大小的连续数组（libstdc++ 是 512 字节）</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 240" role="img" aria-label="deque 由一个中控指针数组和多个固定大小的连续块组成">
+          <text class="d-t is-sm is-gold" x="360" y="26" text-anchor="middle">中控 map：一个指针数组</text>
+          <rect class="d-box is-gold" x="180" y="38" width="90" height="36" rx="5" />
+          <rect class="d-box is-gold" x="300" y="38" width="90" height="36" rx="5" />
+          <rect class="d-box is-gold" x="420" y="38" width="90" height="36" rx="5" />
+          <rect class="d-box is-gold" x="540" y="38" width="90" height="36" rx="5" />
+          <text class="d-t is-sm is-gold is-mono" x="225" y="62" text-anchor="middle">ptr</text>
+          <text class="d-t is-sm is-gold is-mono" x="345" y="62" text-anchor="middle">ptr</text>
+          <text class="d-t is-sm is-gold is-mono" x="465" y="62" text-anchor="middle">ptr</text>
+          <text class="d-t is-sm is-gold is-mono" x="585" y="62" text-anchor="middle">ptr</text>
+
+          <path class="d-line is-gold" d="M225 74 L225 116" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M345 74 L345 116" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M465 74 L465 116" marker-end="url(#ah-gold)" />
+          <path class="d-line is-gold" d="M585 74 L585 116" marker-end="url(#ah-gold)" />
+
+          <rect class="d-box" x="168" y="120" width="114" height="46" rx="6" />
+          <rect class="d-box" x="288" y="120" width="114" height="46" rx="6" />
+          <rect class="d-box" x="408" y="120" width="114" height="46" rx="6" />
+          <rect class="d-box" x="528" y="120" width="114" height="46" rx="6" />
+          <text class="d-t is-sm is-accent" x="225" y="148" text-anchor="middle">定长块</text>
+          <text class="d-t is-sm is-accent" x="345" y="148" text-anchor="middle">定长块</text>
+          <text class="d-t is-sm is-accent" x="465" y="148" text-anchor="middle">定长块</text>
+          <text class="d-t is-sm is-accent" x="585" y="148" text-anchor="middle">定长块</text>
+          <text class="d-t is-sm is-dim" x="360" y="188" text-anchor="middle">每块内部是连续数组（libstdc++ 里是 512 字节），块与块之间不连续</text>
+
+          <path class="d-line is-ok" d="M150 143 L164 143" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="20" y="147">头部加块</text>
+          <path class="d-line is-ok" d="M660 143 L646 143" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="666" y="147">尾部加块</text>
+
+          <text class="d-t is-sm is-dim" x="360" y="222" text-anchor="middle">下标访问 = 先算落在第几块，再算块内偏移，所以仍是 O(1)，只是比 vector 多一次间接</text>
+        </svg>
+        <figcaption><code>deque</code> <strong>不是链表</strong>，而是「指针数组 + 一堆定长连续块」。两端加块都不用搬动已有元素，所以头尾插入都是 O(1) —— 这正是 <code>std::queue</code> 和 <code>std::stack</code> 默认选它而不是 <code>vector</code> 的原因。</figcaption>
+      </figure>
       <ul>
         <li><strong>两端插入删除 O(1)</strong>（在头/尾的块里操作，不够就再挂一块）</li>
         <li><strong><code>[]</code> 随机访问 O(1)</strong>（先算第几块，再算块内偏移，比 <code>vector</code> 稍慢）</li>
@@ -374,14 +600,46 @@ v.push_back(1);                       // 零 malloc
       </div>
 
       <h3>4.4 <code>unordered_map</code>：哈希桶 + 链地址法</h3>
-      <div class="guide-ascii">桶数组（连续）
-  ┌───┬───┬───┬───┬───┐
-  │ 0 │ 1 │ 2 │ 3 │ 4 │
-  └─┬─┴───┴─┬─┴───┴─┬─┘
-    ↓       ↓       ↓
-   [k1]    [k3]    [k5]     ← 哈希冲突的元素挂成链表
-    ↓
-   [k2]</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 265" role="img" aria-label="unordered_map 的桶数组连续存放，冲突的元素挂成链表，rehash 时节点重新分配到新桶">
+          <text class="d-t is-sm is-dim" x="20" y="24">key → 哈希函数 → 落进某个桶</text>
+          <rect class="d-box is-gold" x="20" y="36" width="120" height="34" rx="6" />
+          <text class="d-t is-sm is-gold is-mono" x="80" y="58" text-anchor="middle">hash(key)</text>
+          <path class="d-line is-gold" d="M140 53 L186 53" marker-end="url(#ah-gold)" />
+
+          <text class="d-t is-sm is-accent" x="420" y="30" text-anchor="middle">桶数组（连续内存）</text>
+          <rect class="d-box" x="190" y="36" width="92" height="34" rx="5" />
+          <rect class="d-box" x="282" y="36" width="92" height="34" rx="5" />
+          <rect class="d-box" x="374" y="36" width="92" height="34" rx="5" />
+          <rect class="d-box" x="466" y="36" width="92" height="34" rx="5" />
+          <rect class="d-box" x="558" y="36" width="92" height="34" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="236" y="59" text-anchor="middle">0</text>
+          <text class="d-t is-sm is-mono is-dim" x="328" y="59" text-anchor="middle">1</text>
+          <text class="d-t is-sm is-mono is-dim" x="420" y="59" text-anchor="middle">2</text>
+          <text class="d-t is-sm is-mono is-dim" x="512" y="59" text-anchor="middle">3</text>
+          <text class="d-t is-sm is-mono is-dim" x="604" y="59" text-anchor="middle">4</text>
+
+          <path class="d-line" d="M236 70 L236 100" marker-end="url(#ah)" />
+          <path class="d-line" d="M420 70 L420 100" marker-end="url(#ah)" />
+          <path class="d-line" d="M604 70 L604 100" marker-end="url(#ah)" />
+
+          <rect class="d-box is-muted" x="196" y="104" width="80" height="32" rx="5" />
+          <text class="d-t is-sm is-mono" x="236" y="125" text-anchor="middle">k1</text>
+          <path class="d-line" d="M236 136 L236 162" marker-end="url(#ah)" />
+          <rect class="d-box is-muted" x="196" y="166" width="80" height="32" rx="5" />
+          <text class="d-t is-sm is-mono" x="236" y="187" text-anchor="middle">k2</text>
+          <text class="d-t is-sm is-warn" x="288" y="187">同桶冲突，挂成链表</text>
+
+          <rect class="d-box is-muted" x="380" y="104" width="80" height="32" rx="5" />
+          <text class="d-t is-sm is-mono" x="420" y="125" text-anchor="middle">k3</text>
+          <rect class="d-box is-muted" x="564" y="104" width="80" height="32" rx="5" />
+          <text class="d-t is-sm is-mono" x="604" y="125" text-anchor="middle">k5</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="228">桶数组是连续的，但<tspan class="is-warn">节点是散落在堆上的</tspan>，所以每次查找命中后还要再跳一次指针</text>
+          <text class="d-t is-sm is-dim" x="20" y="252">装填因子超过上限就 rehash：<tspan class="is-warn">桶数组换新、迭代器全废</tspan>，但<tspan class="is-ok">节点本身没搬家，指针和引用仍然有效</tspan></text>
+        </svg>
+        <figcaption>桶数组连续、节点散落，这个结构决定了 <code>unordered_map</code> 的两个特点：平均查找是 O(1)，但常数比想象中大；<strong>rehash 只换桶数组、不动节点</strong>，所以迭代器失效而指针引用不失效 —— 这点和 <code>vector</code> 扩容正好相反。</figcaption>
+      </figure>
       <pre class="answer-code-block"><code>m.bucket_count();       // 桶的数量
 m.load_factor();        // = size / bucket_count（平均每桶几个元素）
 m.max_load_factor();    // 默认 1.0，超过就 rehash

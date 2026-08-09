@@ -1105,3 +1105,180 @@ a.secondary-button {
   color: #ffd479;
   font-weight: 600;
 }
+
+/* ---------- 图示（内联 SVG 示意图） ---------- */
+
+.d-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.guide-figure {
+  margin: 16px 0 20px;
+  padding: 18px 16px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(79, 140, 255, 0.14);
+  background: #0d1728;
+}
+
+.guide-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.guide-figure figcaption {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(149, 179, 255, 0.16);
+  color: #9db6dd;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.guide-figure figcaption strong {
+  color: #ffd479;
+  font-weight: 600;
+}
+
+.guide-figure .d-panel {
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: rgba(149, 179, 255, 0.2);
+  stroke-width: 1;
+}
+
+.guide-figure .d-box {
+  fill: rgba(79, 140, 255, 0.16);
+  stroke: #4f8cff;
+  stroke-width: 1.4;
+}
+
+.guide-figure .d-box.is-warn {
+  fill: rgba(240, 86, 86, 0.16);
+  stroke: #f05656;
+}
+
+.guide-figure .d-box.is-ok {
+  fill: rgba(46, 182, 125, 0.16);
+  stroke: #2eb67d;
+}
+
+.guide-figure .d-box.is-gold {
+  fill: rgba(255, 176, 32, 0.16);
+  stroke: #ffb020;
+}
+
+.guide-figure .d-box.is-muted {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: rgba(149, 179, 255, 0.3);
+}
+
+.guide-figure .d-box.is-ghost {
+  fill: none;
+  stroke: rgba(149, 179, 255, 0.35);
+  stroke-dasharray: 4 4;
+}
+
+.guide-figure .d-t {
+  fill: #dce9ff;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.guide-figure .d-t.is-sm {
+  font-size: 11px;
+}
+
+.guide-figure .d-t.is-lg {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.guide-figure .d-t.is-mono {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.guide-figure .d-t.is-dim {
+  fill: #8fa6c9;
+}
+
+.guide-figure .d-t.is-accent {
+  fill: #8ab6ff;
+}
+
+.guide-figure .d-t.is-warn {
+  fill: #ff9b9b;
+}
+
+.guide-figure .d-t.is-ok {
+  fill: #6fe0b0;
+}
+
+.guide-figure .d-t.is-gold {
+  fill: #ffd479;
+}
+
+.guide-figure .d-line {
+  fill: none;
+  stroke: rgba(149, 179, 255, 0.5);
+  stroke-width: 1.4;
+}
+
+.guide-figure .d-line.is-dash {
+  stroke-dasharray: 5 4;
+}
+
+.guide-figure .d-line.is-warn {
+  stroke: rgba(240, 86, 86, 0.7);
+}
+
+.guide-figure .d-line.is-ok {
+  stroke: rgba(46, 182, 125, 0.7);
+}
+
+.guide-figure .d-line.is-gold {
+  stroke: rgba(255, 176, 32, 0.7);
+}
+
+.guide-figure .d-line.is-faint {
+  stroke: rgba(149, 179, 255, 0.22);
+  stroke-width: 1;
+}
+
+/* 用图底色遮住穿过标签的连线，让标签像贴在连线上的小牌子 */
+.guide-figure .d-mask {
+  fill: #0d1728;
+}
+
+.guide-figure .d-fill-accent {
+  fill: rgba(79, 140, 255, 0.16);
+}
+
+.guide-figure .d-fill-warn {
+  fill: rgba(240, 86, 86, 0.18);
+}
+
+.guide-figure .d-fill-ok {
+  fill: rgba(46, 182, 125, 0.18);
+}
+
+.guide-figure .d-fill-gold {
+  fill: rgba(255, 176, 32, 0.18);
+}
+
+@media (max-width: 720px) {
+  .guide-figure {
+    padding: 14px 10px 10px;
+  }
+
+  .guide-figure .d-t {
+    font-size: 12px;
+  }
+
+  .guide-figure .d-t.is-sm {
+    font-size: 10.5px;
+  }
+}

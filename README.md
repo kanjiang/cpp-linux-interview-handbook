@@ -14,6 +14,7 @@ cpp-linux-interview-handbook/
     script.js
     questions.js
     script.test.js
+    pages.test.js
 ```
 
 页面能力包括：
@@ -27,6 +28,7 @@ cpp-linux-interview-handbook/
 - 分类 / 难度 / 高频 / 公司轨道筛选
 - 展开全部 / 收起全部
 - 每道题附标准回答要点
+- 七篇图解笔记，共 `34` 张内联 SVG 示意图（内存布局、缓存行、epoll 内部结构、锁与死锁、火焰图等）
 - 恒生经纪业务 C++ 岗准备页（技能清单 + JD checklist + 复习路径）
 
 ## 本地预览
@@ -58,15 +60,22 @@ python3 -m http.server 8000
 
 ## 自动化检查
 
-当前页面逻辑包含一个轻量级 Node 测试文件，用于校验：
+仓库包含两个轻量级 Node 测试文件。`docs/script.test.js` 校验题库逻辑：
 
 - 题库规模
 - 搜索与筛选逻辑
 - 练习模式题池构造
 - 统计信息计算
 
+`docs/pages.test.js` 校验静态页面本身，重点是那批手写的内联 SVG 示意图：
+
+- 每张图的标签是否闭合（SVG 是 XML 语法，浏览器会静默吞掉错误）
+- `url(#id)` 箭头引用是否都能在同一文档里解析到
+- 每张图是否带 `aria-label` 与图注
+- 页面之间的相对链接与 `?category=` 深链是否都指向真实存在的目标
+
 ```bash
-node --test docs/script.test.js
+node --test docs/
 ```
 
 ## 在线访问

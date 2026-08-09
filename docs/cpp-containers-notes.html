@@ -10,6 +10,14 @@
 </head>
 
 <body class="hundsun-page guide-page">
+  <svg class="d-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(149,179,255,.65)" /></marker>
+      <marker id="ah-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(240,86,86,.8)" /></marker>
+      <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(46,182,125,.8)" /></marker>
+      <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(255,176,32,.85)" /></marker>
+    </defs>
+  </svg>
   <main class="app-shell">
     <section class="hero hero-showcase hundsun-hero">
       <div class="hero-copy">
@@ -58,28 +66,85 @@ std::shared_ptr  →   一个对象，共享            合租房 + 门口的人
         <p>你租了<strong>一排连号的储物柜</strong>（连续内存）。柜子编号连续，所以按编号取东西<strong>极快</strong>（<code>v[i]</code> 就是地址加偏移）。柜子租满了怎么办？去租一排<strong>更大的</strong>（通常是 2 倍），把东西<strong>全搬过去</strong>，退掉旧的。</p>
       </div>
 
-      <div class="guide-ascii">起初：容量 4，用了 4
-  [A][B][C][D]
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 280" role="img" aria-label="vector 扩容时会申请更大的新内存、把元素全部搬过去再释放旧内存，所有元素地址随之改变">
+          <text class="d-t is-sm is-dim" x="20" y="24">容量 4 已经装满，再 push_back 一个 E</text>
 
-再放一个 E → 满了，必须扩容：
-  1. 租一排 8 个的新柜子
-  2. 把 A B C D 搬过去（移动或拷贝）
-  3. 退掉旧柜子
-  4. 放入 E
+          <text class="d-t is-sm is-dim" x="20" y="60">旧内存</text>
+          <rect class="d-box is-muted" x="100" y="38" width="66" height="38" rx="5" />
+          <rect class="d-box is-muted" x="166" y="38" width="66" height="38" rx="5" />
+          <rect class="d-box is-muted" x="232" y="38" width="66" height="38" rx="5" />
+          <rect class="d-box is-muted" x="298" y="38" width="66" height="38" rx="5" />
+          <text class="d-t is-sm is-dim is-mono" x="133" y="62" text-anchor="middle">A</text>
+          <text class="d-t is-sm is-dim is-mono" x="199" y="62" text-anchor="middle">B</text>
+          <text class="d-t is-sm is-dim is-mono" x="265" y="62" text-anchor="middle">C</text>
+          <text class="d-t is-sm is-dim is-mono" x="331" y="62" text-anchor="middle">D</text>
+          <text class="d-t is-sm is-warn" x="390" y="62">满了</text>
 
-  [A][B][C][D][E][ ][ ][ ]
-       ↑ 注意：所有东西的【地址都变了】</div>
+          <path class="d-line is-gold" d="M232 84 L232 122" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-gold" x="248" y="108">申请一块更大的（通常翻倍），把元素逐个搬过去，再释放旧的</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="152">新内存</text>
+          <rect class="d-box" x="100" y="130" width="66" height="38" rx="5" />
+          <rect class="d-box" x="166" y="130" width="66" height="38" rx="5" />
+          <rect class="d-box" x="232" y="130" width="66" height="38" rx="5" />
+          <rect class="d-box" x="298" y="130" width="66" height="38" rx="5" />
+          <rect class="d-box is-ok" x="364" y="130" width="66" height="38" rx="5" />
+          <rect class="d-box is-ghost" x="430" y="130" width="66" height="38" rx="5" />
+          <rect class="d-box is-ghost" x="496" y="130" width="66" height="38" rx="5" />
+          <rect class="d-box is-ghost" x="562" y="130" width="66" height="38" rx="5" />
+          <text class="d-t is-sm is-accent is-mono" x="133" y="154" text-anchor="middle">A</text>
+          <text class="d-t is-sm is-accent is-mono" x="199" y="154" text-anchor="middle">B</text>
+          <text class="d-t is-sm is-accent is-mono" x="265" y="154" text-anchor="middle">C</text>
+          <text class="d-t is-sm is-accent is-mono" x="331" y="154" text-anchor="middle">D</text>
+          <text class="d-t is-sm is-ok is-mono" x="397" y="154" text-anchor="middle">E</text>
+
+          <path class="d-line" d="M100 184 L364 184" />
+          <text class="d-t is-sm is-dim" x="232" y="202" text-anchor="middle">size = 5</text>
+          <path class="d-line is-faint" d="M100 216 L628 216" />
+          <text class="d-t is-sm is-dim" x="364" y="234" text-anchor="middle">capacity = 8</text>
+
+          <text class="d-t is-sm is-warn" x="20" y="268">元素<tspan class="is-warn">整体搬了家</tspan>，所以扩容前拿到的迭代器、指针、引用全部失效 —— 这是 vector 最容易翻车的地方</text>
+        </svg>
+        <figcaption><code>vector</code> 的连续性是靠「搬家」换来的：一旦装满，就得整体挪到一块更大的内存上。<strong>搬家意味着地址全变</strong>，所以之前保存的迭代器和指针会集体作废。提前 <code>reserve</code> 就是为了避开这件事。</figcaption>
+      </figure>
 
       <h3>1.1 内存布局：其实就三个指针</h3>
-      <div class="guide-ascii">vector 对象本身（栈上，通常 24 字节）：
-  ┌──────────┬──────────┬──────────┐
-  │  begin   │   end    │ capacity │
-  └────┬─────┴────┬─────┴────┬─────┘
-       │          │          │
-       ↓          ↓          ↓
-堆上： [A][B][C][D][ ][ ][ ][ ]
-       └── size=4 ──┘
-       └──── capacity=8 ─────┘</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 235" role="img" aria-label="vector 对象本身只有 begin、end、capacity 三个指针，数据全部放在堆上">
+          <text class="d-t is-sm is-dim" x="20" y="24">vector 对象本身（在栈上，通常 24 字节）</text>
+          <rect class="d-box" x="100" y="36" width="150" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="175" y="61" text-anchor="middle">begin</text>
+          <rect class="d-box" x="250" y="36" width="150" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="325" y="61" text-anchor="middle">end</text>
+          <rect class="d-box" x="400" y="36" width="150" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="475" y="61" text-anchor="middle">capacity</text>
+
+          <path class="d-line" d="M175 76 L124 122" marker-end="url(#ah)" />
+          <path class="d-line" d="M325 76 L388 122" marker-end="url(#ah)" />
+          <path class="d-line" d="M475 76 L652 122" marker-end="url(#ah)" />
+
+          <text class="d-t is-sm is-dim" x="20" y="150">堆上</text>
+          <rect class="d-box" x="100" y="126" width="72" height="38" rx="5" />
+          <rect class="d-box" x="172" y="126" width="72" height="38" rx="5" />
+          <rect class="d-box" x="244" y="126" width="72" height="38" rx="5" />
+          <rect class="d-box" x="316" y="126" width="72" height="38" rx="5" />
+          <rect class="d-box is-ghost" x="388" y="126" width="72" height="38" rx="5" />
+          <rect class="d-box is-ghost" x="460" y="126" width="72" height="38" rx="5" />
+          <rect class="d-box is-ghost" x="532" y="126" width="72" height="38" rx="5" />
+          <rect class="d-box is-ghost" x="604" y="126" width="72" height="38" rx="5" />
+          <text class="d-t is-sm is-mono is-accent" x="136" y="150" text-anchor="middle">A</text>
+          <text class="d-t is-sm is-mono is-accent" x="208" y="150" text-anchor="middle">B</text>
+          <text class="d-t is-sm is-mono is-accent" x="280" y="150" text-anchor="middle">C</text>
+          <text class="d-t is-sm is-mono is-accent" x="352" y="150" text-anchor="middle">D</text>
+
+          <path class="d-line is-ok" d="M100 180 L388 180" />
+          <text class="d-t is-sm is-ok" x="244" y="198" text-anchor="middle">size = 4</text>
+          <path class="d-line is-faint" d="M100 210 L676 210" />
+          <text class="d-t is-sm is-dim" x="388" y="228" text-anchor="middle">capacity = 8</text>
+        </svg>
+        <figcaption>这解释了一个常被问到的现象：<code>sizeof(std::vector&lt;int&gt;)</code> 永远是 24，<strong>和里面装多少元素完全无关</strong> —— 对象里只有三个指针，真正的数据全在堆上。<code>size</code> 是 <code>end - begin</code>，<code>capacity</code> 是 <code>cap - begin</code>。</figcaption>
+      </figure>
       <p>所以 <code>sizeof(std::vector&lt;int&gt;)</code> 是固定的（一般 24 字节），<strong>跟里面装多少东西无关</strong> —— 数据全在堆上。</p>
 
       <h3>1.2 <code>size</code> vs <code>capacity</code>（必分清）</h3>
@@ -186,17 +251,36 @@ bool* p = &amp;v[0];        // ✗ 取不到地址</code></pre>
         <span class="callout-label">形象比喻</span>
         <p>现实中的字符串绝大多数很短（<code>"id"</code>、<code>"OK"</code>、<code>"600519"</code>）。为这么短的东西跑一趟 <code>new</code> 太亏了，所以 <code>string</code> 在<strong>自己身上缝了一个小口袋</strong> —— 短字符串直接塞口袋里（栈上），根本不碰堆。</p>
       </div>
-      <div class="guide-ascii">短字符串（SSO，不分配堆内存）：
-  string 对象 ┌────────────────────────────┐
-             │ "hello\0"  ...  │ size │标记│   ← 全在栈上
-             └────────────────────────────┘
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 265" role="img" aria-label="短字符串直接存在 string 对象内部不碰堆，长字符串退化成指针加长度加容量并把内容放到堆上">
+          <text class="d-t is-sm is-ok" x="20" y="26">短字符串：内容就住在对象自己身上，一次堆分配都没有</text>
+          <rect class="d-panel" x="20" y="38" width="480" height="56" rx="10" />
+          <rect class="d-box is-ok" x="34" y="50" width="300" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-ok" x="184" y="71" text-anchor="middle">h e l l o \0 …</text>
+          <rect class="d-box is-muted" x="340" y="50" width="70" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="375" y="71" text-anchor="middle">size</text>
+          <rect class="d-box is-muted" x="414" y="50" width="72" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="450" y="71" text-anchor="middle">标记</text>
+          <text class="d-t is-sm is-ok" x="516" y="71">拷贝几乎免费</text>
 
-长字符串（超过阈值，退化成 vector 模式）：
-  string 对象 ┌──────┬──────┬──────────┐
-             │ ptr  │ size │ capacity │
-             └──┬───┴──────┴──────────┘
-                ↓
-  堆：  "这是一个很长很长的字符串......"</div>
+          <line class="d-line is-faint" x1="20" y1="118" x2="700" y2="118" />
+
+          <text class="d-t is-sm is-warn" x="20" y="146">超过阈值：退化成和 vector 一样的三件套，内容搬到堆上</text>
+          <rect class="d-panel" x="20" y="158" width="480" height="56" rx="10" />
+          <rect class="d-box" x="34" y="170" width="150" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-accent" x="109" y="191" text-anchor="middle">ptr</text>
+          <rect class="d-box is-muted" x="190" y="170" width="146" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="263" y="191" text-anchor="middle">size</text>
+          <rect class="d-box is-muted" x="342" y="170" width="144" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="414" y="191" text-anchor="middle">capacity</text>
+
+          <path class="d-line is-warn" d="M109 214 L109 236" marker-end="url(#ah-warn)" />
+          <rect class="d-box is-warn" x="140" y="222" width="360" height="32" rx="5" />
+          <text class="d-t is-sm is-warn" x="320" y="243" text-anchor="middle">堆上的真正内容</text>
+          <text class="d-t is-sm is-warn" x="516" y="243">每次拷贝 = 一次堆分配</text>
+        </svg>
+        <figcaption>现实中的字符串绝大多数很短（<code>"OK"</code>、<code>"600519"</code>），为它们跑一趟 <code>new</code> 太亏。SSO 就是<strong>在对象自己身上缝了个小口袋</strong>。实践含义很直接：短字符串拷贝几乎免费，一旦超过 15 或 22 个字符（取决于实现），每次拷贝都会变成一次堆分配。</figcaption>
+      </figure>
 
       <div class="guide-table-wrap">
         <table class="guide-table">
@@ -328,17 +412,34 @@ auto s = createStrategy(Type::TWAP);   // 所有权明确地交给调用方</cod
         <p>一栋房子，<strong>很多人都有钥匙</strong>。门口挂着一块<strong>计数牌</strong>：每多一个人拿钥匙 → 计数 +1；每有一个人走掉 → 计数 −1；<strong>最后一个走的人关灯拆房</strong>（计数归 0 → <code>delete</code> 对象）。</p>
       </div>
 
-      <div class="guide-ascii">        ┌──────────────┐
-        │    房子       │  ← 被管理的对象
-        │  (Order)     │
-        └──────┬───────┘
-               │
-        ┌──────┴───────┐
-        │  计数牌: 3   │  ← 控制块（在堆上）
-        │  弱引用: 1   │
-        └──────────────┘
-          ↑    ↑    ↑
-         p1   p2   p3     ← 三个 shared_ptr</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="三个 shared_ptr 共同指向同一个对象和同一个控制块，控制块里记录强引用和弱引用计数">
+          <rect class="d-box is-ok" x="240" y="24" width="240" height="56" rx="10" />
+          <text class="d-t is-sm is-ok" x="360" y="48" text-anchor="middle">被管理的对象</text>
+          <text class="d-t is-sm is-mono is-dim" x="360" y="68" text-anchor="middle">Order</text>
+
+          <rect class="d-box is-gold" x="240" y="112" width="240" height="72" rx="10" />
+          <text class="d-t is-sm is-gold" x="360" y="136" text-anchor="middle">控制块（堆上）</text>
+          <text class="d-t is-sm is-gold" x="360" y="158" text-anchor="middle">强引用计数 = 3</text>
+          <text class="d-t is-sm is-dim" x="360" y="176" text-anchor="middle">弱引用计数 = 1</text>
+          <path class="d-line is-gold" d="M360 108 L360 84" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-dim" x="496" y="100">计数归 0 时才 delete 对象</text>
+
+          <rect class="d-box" x="60" y="216" width="140" height="40" rx="8" />
+          <text class="d-t is-sm is-mono is-accent" x="130" y="241" text-anchor="middle">p1</text>
+          <rect class="d-box" x="290" y="216" width="140" height="40" rx="8" />
+          <text class="d-t is-sm is-mono is-accent" x="360" y="241" text-anchor="middle">p2</text>
+          <rect class="d-box" x="520" y="216" width="140" height="40" rx="8" />
+          <text class="d-t is-sm is-mono is-accent" x="590" y="241" text-anchor="middle">p3</text>
+
+          <path class="d-line" d="M130 212 L280 188" marker-end="url(#ah)" />
+          <path class="d-line" d="M360 212 L360 188" marker-end="url(#ah)" />
+          <path class="d-line" d="M590 212 L440 188" marker-end="url(#ah)" />
+
+          <text class="d-t is-sm is-dim" x="20" y="292">每多一个持有者计数 +1，每析构一个 −1；归零时才真正销毁对象</text>
+        </svg>
+        <figcaption>一栋房子，很多人都有钥匙，门口挂着一块计数牌。<strong>最后一个走的人负责关灯拆房</strong> —— 这就是 <code>shared_ptr</code> 的全部逻辑。注意计数牌是<strong>单独一块堆内存</strong>，不在对象里面，这也是它比 <code>unique_ptr</code> 大一倍的原因。</figcaption>
+      </figure>
 
       <pre class="answer-code-block"><code>auto p1 = std::make_shared&lt;Order&gt;(123);   // 计数 = 1
 {
@@ -417,9 +518,43 @@ a-&gt;next = b;
 b-&gt;prev = a;
 // 离开作用域后：外部引用没了，但它们【互相】还各持有对方一个引用
 // → 计数都停在 1 → 永远不会被释放</code></pre>
-      <div class="guide-ascii">     a ←──── prev ──── b
-     └──── next ────→ ┘
-     两个人互相攥着对方的钥匙，谁也走不掉</div>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 280" role="img" aria-label="两个 shared_ptr 互相持有对方形成循环引用导致计数永不归零，把一个方向改成 weak_ptr 即可打破">
+          <text class="d-t is-sm is-warn" x="20" y="24">循环引用：两边都是 shared_ptr</text>
+
+          <rect class="d-box is-warn" x="110" y="42" width="150" height="56" rx="10" />
+          <text class="d-t is-sm is-warn" x="185" y="66" text-anchor="middle">节点 a</text>
+          <text class="d-t is-sm is-dim" x="185" y="86" text-anchor="middle">计数停在 1</text>
+          <rect class="d-box is-warn" x="440" y="42" width="150" height="56" rx="10" />
+          <text class="d-t is-sm is-warn" x="515" y="66" text-anchor="middle">节点 b</text>
+          <text class="d-t is-sm is-dim" x="515" y="86" text-anchor="middle">计数停在 1</text>
+
+          <path class="d-line is-warn" d="M260 58 L436 58" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-mono is-warn" x="348" y="50" text-anchor="middle">next（强）</text>
+          <path class="d-line is-warn" d="M440 86 L264 86" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-mono is-warn" x="348" y="106" text-anchor="middle">prev（强）</text>
+
+          <text class="d-t is-sm is-warn" x="20" y="132">外部引用都没了，但两人互相攥着对方的钥匙 —— 谁的计数都归不了零，内存永久泄漏</text>
+
+          <line class="d-line is-faint" x1="20" y1="152" x2="700" y2="152" />
+
+          <text class="d-t is-sm is-ok" x="20" y="180">解法：把回指的那个方向降级成 weak_ptr</text>
+
+          <rect class="d-box is-ok" x="110" y="196" width="150" height="56" rx="10" />
+          <text class="d-t is-sm is-ok" x="185" y="220" text-anchor="middle">节点 a</text>
+          <text class="d-t is-sm is-dim" x="185" y="240" text-anchor="middle">可以归零</text>
+          <rect class="d-box is-ok" x="440" y="196" width="150" height="56" rx="10" />
+          <text class="d-t is-sm is-ok" x="515" y="220" text-anchor="middle">节点 b</text>
+          <text class="d-t is-sm is-dim" x="515" y="240" text-anchor="middle">可以归零</text>
+
+          <path class="d-line is-ok" d="M260 212 L436 212" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-mono is-ok" x="348" y="204" text-anchor="middle">next（强）</text>
+          <path class="d-line is-ok is-dash" d="M440 240 L264 240" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-mono is-dim" x="348" y="262" text-anchor="middle">prev（弱，不计数）</text>
+        </svg>
+        <figcaption>引用计数唯一治不了的病就是<strong>环</strong>。<code>weak_ptr</code> 的作用是「我能看到你，但我不为你的生死负责」—— 它不增加强引用计数，于是环被打断。通用规则是<strong>父持子用 <code>shared_ptr</code>，子回指父用 <code>weak_ptr</code></strong>。</figcaption>
+      </figure>
+
       <p><strong>解法：把其中一个方向改成 <code>weak_ptr</code></strong>（观察但不持有）：</p>
       <pre class="answer-code-block"><code>struct Node {
     std::shared_ptr&lt;Node&gt; next;   // 强：我负责下一个的生命周期
