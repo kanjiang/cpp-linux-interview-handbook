@@ -517,12 +517,14 @@ function renderApp(container, questions, state) {
     '      <button class="secondary-button" type="button" data-hero-action="high-frequency">只看高频</button>',
     '      <button class="secondary-button" type="button" data-hero-action="hundsun">恒生岗位题</button>',
     '      <button class="secondary-button" type="button" data-hero-action="hundsun-knowledge">恒生知识直讲</button>',
+    '      <button class="secondary-button" type="button" data-hero-action="debug-knowledge">调试工具直讲</button>',
     '      <a class="secondary-button" href="./cpp-modern-notes.html">C++ 核心笔记</a>',
     '      <a class="secondary-button" href="./cpp-value-semantics.html">拷贝与移动</a>',
     '      <a class="secondary-button" href="./cpp-containers-notes.html">容器与智能指针</a>',
     '      <a class="secondary-button" href="./cpp-concurrency-notes.html">并发与线程</a>',
     '      <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>',
     '      <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>',
+    '      <a class="secondary-button" href="./debug-tools-notes.html">调试工具</a>',
     '      <a class="secondary-button" href="./hundsun.html">恒生面试准备</a>',
     "    </div>",
     "  </div>",
@@ -585,7 +587,8 @@ function renderApp(container, questions, state) {
     "    <li>最后重点刷半导体 / EDA 专项、项目深挖和 HR 场景题，把“会做题”升级成“会讲项目”。</li>",
     '    <li>若准备恒生经纪业务 C++ 岗，可先看 <a href="./hundsun.html">恒生面试准备页</a>，再用公司轨道筛选“恒生岗位题”。</li>',
     '    <li>语言底盘想补形象化理解，可依次读 <a href="./cpp-modern-notes.html">C++ 核心笔记</a> → <a href="./cpp-value-semantics.html">拷贝与移动</a> → <a href="./cpp-containers-notes.html">容器与智能指针</a> → <a href="./cpp-concurrency-notes.html">并发与线程</a>。</li>',
-    '    <li>系统层与性能方向，接着读 <a href="./cpp-memory-perf-notes.html">内存与性能</a>（对齐/伪共享/内存池/STL 底层）→ <a href="./linux-sysprog-notes.html">Linux 系统编程</a>（epoll/mmap/信号/core dump/OOM）。</li>',
+    '    <li>系统层与性能方向，接着读 <a href="./cpp-memory-perf-notes.html">内存与性能</a>（对齐/伪共享/内存池/STL 底层）→ <a href="./linux-sysprog-notes.html">Linux 系统编程</a>（epoll/mmap/信号/core dump/OOM）→ <a href="./debug-tools-notes.html">调试工具</a>（gdb/Sanitizer/valgrind/perf/strace）。</li>',
+    '    <li>每读完一篇笔记就配套刷题：语言部分刷「C++ 知识直讲」，调试与排障部分刷「调试工具直讲」，恒生岗位再走一遍「恒生 /」各专题。</li>',
     "  </ol>",
     "</section>",
     '<footer class="site-footer">',
@@ -768,6 +771,14 @@ function mountInterviewSite(globalScope) {
           state.filters.companyTrack = "hundsun";
           state.filters.highFrequencyOnly = false;
           pendingCategoryScroll = "恒生 / 知识直讲";
+          refreshPractice();
+        } else if (action === "debug-knowledge") {
+          state.mode = "browse";
+          state.filters.category = "调试工具直讲";
+          state.filters.search = "";
+          state.filters.companyTrack = "all";
+          state.filters.highFrequencyOnly = false;
+          pendingCategoryScroll = "调试工具直讲";
           refreshPractice();
         }
 

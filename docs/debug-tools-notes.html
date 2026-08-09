@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>调试工具实战笔记 · gdb/Sanitizer/valgrind/perf/strace</title>
+  <meta name="description" content="按现象选工具的排查决策表，gdb 断点观察点与多线程死锁定位技巧，AddressSanitizer/ThreadSanitizer、valgrind 家族、perf 火焰图、strace/pstack/proc 等生产排障手段。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Debugging Toolbox</p>
+        <h1>调试工具 · 实战笔记</h1>
+        <p>先按「现象」选对工具，再谈技巧。gdb 的断点/观察点/多线程栈、Sanitizer 的编译期插桩、valgrind 的免重编译、perf 的火焰图、strace 的系统调用追踪 —— 每种工具都配一个可以照着做的排查剧本。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./index.html?category=%E8%B0%83%E8%AF%95%E5%B7%A5%E5%85%B7%E7%9B%B4%E8%AE%B2">刷调试工具直讲题</a>
+          <a class="secondary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20Linux%E4%B8%8E%E8%B0%83%E8%AF%95">恒生 Linux 与调试题</a>
+          <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
+          <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>
+          <a class="secondary-button" href="./hundsun.html">恒生准备页</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#pick">1. 一分钟决策表：什么现象用什么工具</a></li>
+        <li><a href="#gdb-basic">2. gdb 基础：启动、断点、栈、变量</a></li>
+        <li><a href="#gdb-advanced">3. gdb 高级技巧</a></li>
+        <li><a href="#playbook">4. 五个实战剧本</a></li>
+        <li><a href="#sanitizer">5. Sanitizer · 现代首选</a></li>
+        <li><a href="#valgrind">6. valgrind 家族</a></li>
+        <li><a href="#perf">7. perf 与火焰图</a></li>
+        <li><a href="#strace">8. strace / ltrace · 看它到底在干什么</a></li>
+        <li><a href="#misc">9. 生产环境轻量工具箱</a></li>
+        <li><a href="#flags">10. 编译期就该开好的选项</a></li>
+        <li><a href="#cheatsheet">11. 一页速记</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="pick">
+      <h2>1. 一分钟决策表：什么现象用什么工具</h2>
+      <div class="guide-callout is-key">
+        <span class="callout-label">核心思路</span>
+        <p>调试最耗时的从来不是「用工具」，而是<strong>选错了工具</strong>。先把现象归类，工具自然就定了。</p>
+      </div>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>现象</th><th>首选工具</th><th>一句话理由</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>崩溃了，<strong>有 core</strong></td><td><code>gdb ./prog core</code></td><td>现场已封存，直接进去看栈</td></tr>
+            <tr><td>崩溃了，<strong>没有 core</strong></td><td><code>dmesg</code> + <code>ulimit -c</code></td><td>多半是被 <code>kill -9</code> / OOM Killer 杀的</td></tr>
+            <tr><td><strong>进程卡住不动</strong></td><td><code>pstack</code> 或 <code>gdb -p PID</code></td><td>看所有线程停在哪一行，死锁一眼看穿</td></tr>
+            <tr><td><strong>内存持续增长</strong></td><td>ASan / <code>massif</code> / <code>heaptrack</code> / <code>pmap</code></td><td>先区分「真泄漏」还是「池不还给 OS」</td></tr>
+            <tr><td><strong>越界 / 野指针 / use-after-free</strong></td><td><strong>ASan</strong>（<code>-fsanitize=address</code>）</td><td>崩在第一现场，而不是很久之后</td></tr>
+            <tr><td><strong>偶现的数据错乱</strong></td><td><strong>TSan</strong>（<code>-fsanitize=thread</code>）</td><td>数据竞争靠肉眼几乎查不出来</td></tr>
+            <tr><td><strong>CPU 打满</strong></td><td><code>perf top</code> → <code>perf record</code> + 火焰图</td><td>直接定位到最烫的那个函数</td></tr>
+            <tr><td><strong>慢，但 CPU 不高</strong></td><td><code>strace -T</code> / 查锁与 IO</td><td>时间花在等待上，不在计算上</td></tr>
+            <tr><td>行为诡异（读错文件、权限问题）</td><td><code>strace -f</code></td><td>系统调用不会撒谎</td></tr>
+            <tr><td>网络连不上 / 连接堆积</td><td><code>ss -tanp</code> / <code>tcpdump</code></td><td>先看状态机，再看包</td></tr>
+            <tr><td>加载了错误版本的库</td><td><code>ldd</code> / <code>/proc/PID/maps</code></td><td>确认实际加载路径</td></tr>
+            <tr><td>只有崩溃地址，没有符号</td><td><code>addr2line</code> / <code>c++filt</code></td><td>把地址翻回文件行号</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="gdb-basic">
+      <h2>2. gdb 基础：启动、断点、栈、变量</h2>
+
+      <h3>2.1 四种启动方式</h3>
+      <pre class="answer-code-block"><code>gdb ./prog                    # 从头调试
+gdb --args ./prog -p 8080     # 带命令行参数（★ 比进去再 set args 方便）
+gdb ./prog core.1234          # 事后分析 core
+gdb -p 1234                   # attach 到【正在运行】的进程（生产排障主力）</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">attach 注意</span>
+        <p><code>gdb -p</code> 会<strong>暂停整个进程</strong>，生产环境上要快进快出，看完立刻 <code>detach</code>（不要 <code>quit</code>，<code>quit</code> 在某些情况下会杀掉进程）。若提示权限不足：<code>echo 0 &gt; /proc/sys/kernel/yama/ptrace_scope</code>。</p>
+      </div>
+
+      <h3>2.2 运行控制</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>命令</th><th>简写</th><th>作用</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>run</code></td><td><code>r</code></td><td>开始运行</td></tr>
+            <tr><td><code>start</code></td><td>—</td><td>运行并停在 <code>main</code> 第一行</td></tr>
+            <tr><td><code>continue</code></td><td><code>c</code></td><td>继续跑到下一个断点</td></tr>
+            <tr><td><code>next</code></td><td><code>n</code></td><td>单步，<strong>跳过</strong>函数调用</td></tr>
+            <tr><td><code>step</code></td><td><code>s</code></td><td>单步，<strong>进入</strong>函数</td></tr>
+            <tr><td><code>finish</code></td><td>—</td><td>跑完当前函数并<strong>打印返回值</strong>（很实用）</td></tr>
+            <tr><td><code>until N</code></td><td><code>u</code></td><td>跑到第 N 行，<strong>用来跳出循环</strong></td></tr>
+            <tr><td><code>return</code></td><td>—</td><td>强制立刻返回（可指定返回值）</td></tr>
+            <tr><td><code>advance 位置</code></td><td>—</td><td>跑到指定位置，不用设断点</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.3 断点</h3>
+      <pre class="answer-code-block"><code>break order.cpp:120         # 文件:行号
+break OrderBook::insert     # 函数名
+break *0x4005d6             # 地址
+tbreak main                 # 一次性断点，命中后自动删除
+rbreak ^Order::             # 正则批量下断点
+
+info breakpoints            # 列出所有断点（缩写 i b）
+delete 2                    # 删第 2 个
+disable 2 / enable 2        # 临时禁用/启用
+condition 2 id == 1001      # 给已有断点补条件</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">最实用的两个技巧</span>
+        <p><strong>① 条件断点</strong>：循环跑一百万次，你只关心某一次。</p>
+        <pre class="answer-code-block"><code>break process if orderId == 88888
+break vec.cpp:42 if i &gt; 10000 &amp;&amp; ptr == nullptr</code></pre>
+        <p><strong>② ignore 跳过前 N 次</strong>：不知道条件怎么写，但知道大概第几次出问题。</p>
+        <pre class="answer-code-block"><code>ignore 1 5000      # 第 1 号断点，前 5000 次不停</code></pre>
+      </div>
+
+      <h3>2.4 观察点 watchpoint —— 「到底是谁改了我的变量」</h3>
+      <p>这是 gdb 最被低估的功能。变量莫名其妙变成了脏值，用它一步到位：</p>
+      <pre class="answer-code-block"><code>watch  g_counter        # 值【被修改】时停下，并打印【改前改后】的值
+rwatch g_counter        # 被【读取】时停下
+awatch g_counter        # 读或写都停
+
+watch -l ptr-&gt;field     # -l 锁定当前地址，避免 ptr 变了跟丢
+info watchpoints</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">限制</span>
+        <p>硬件观察点通常<strong>只有 4 个</strong>（受 CPU 调试寄存器限制），且只能监视固定长度的内存。超了会退化成软件观察点，速度慢上百倍。另外变量出作用域后观察点会自动失效。</p>
+      </div>
+
+      <h3>2.5 栈与变量</h3>
+      <pre class="answer-code-block"><code>bt                    # 调用栈（最常用的第一条命令）
+bt full               # 每一帧都带局部变量
+bt 10                 # 只看最近 10 帧（栈很深时）
+frame 3               # 切到第 3 帧
+up / down             # 上下移动一帧
+
+info locals           # 当前帧的局部变量
+info args             # 参数
+info registers        # 寄存器
+
+p order               # 打印变量
+p *ptr                # 解引用
+p *arr@10             # ★ 打印数组前 10 个元素
+p/x flags             # 十六进制（/t 二进制 /d 十进制 /c 字符）
+p obj.method()        # 甚至可以调用函数
+ptype Order           # 看类型定义
+whatis x              # 看变量类型
+
+x/16xb ptr            # 按字节 dump 内存
+x/4dw ptr             # 按 4 字节整数
+x/s charPtr           # 当字符串
+x/5i $pc              # 反汇编当前位置的 5 条指令</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">调试期改状态</span>
+        <pre class="answer-code-block"><code>set var retryCount = 0      # 直接改变量，验证「如果这里是 0 会怎样」
+call reloadConfig()         # 运行中调用函数
+display orderCount          # 每次停下自动打印这个表达式</code></pre>
+      </div>
+
+      <h3>2.6 多线程</h3>
+      <pre class="answer-code-block"><code>info threads              # 列出所有线程，* 标记当前线程
+thread 3                  # 切到 3 号线程
+thread apply all bt       # ★★ 所有线程的调用栈 —— 死锁排查第一命令
+thread apply all bt full
+
+set scheduler-locking on  # 单步时【冻结其他线程】，避免它们跑飞
+set scheduler-locking off # 默认值，恢复</code></pre>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="gdb-advanced">
+      <h2>3. gdb 高级技巧</h2>
+
+      <h3>3.1 断点命中后自动执行动作（不用手动敲）</h3>
+      <pre class="answer-code-block"><code>break handleOrder
+commands
+  silent            # 不打印"Breakpoint 1, ..."的噪音
+  printf "id=%d price=%f\n", order.id, order.price
+  continue          # 打印完自动继续
+end</code></pre>
+      <p>相当于<strong>不改代码就插了一行日志</strong> —— 生产环境不方便重新编译时特别有用。</p>
+
+      <h3>3.2 抓异常和 abort</h3>
+      <pre class="answer-code-block"><code>catch throw           # C++ 异常【抛出】的那一刻停下（能看到抛出点的栈！）
+catch catch           # 被捕获时停
+break abort           # assert 失败 / 未捕获异常最终走到这里
+break __cxa_throw     # 等价于 catch throw
+catch syscall write   # 特定系统调用</code></pre>
+      <p><code>catch throw</code> 非常关键：普通调试只能看到 <code>catch</code> 块里的栈，那时**真正的抛出现场已经被栈展开销毁了**。</p>
+
+      <h3>3.3 打印 STL 容器</h3>
+      <p>GDB 7 之后自带 Python pretty-printer，<code>p myVector</code> 应该直接显示 <code>{1, 2, 3}</code> 而不是一堆内部指针。如果没生效：</p>
+      <pre class="answer-code-block"><code># ~/.gdbinit
+python
+import sys
+sys.path.insert(0, '/usr/share/gcc/python')
+from libstdcxx.v6.printers import register_libstdcxx_printers
+register_libstdcxx_printers(None)
+end</code></pre>
+      <p>临时绕过：<code>p *v._M_impl._M_start@v.size()</code>（对 libstdc++ 的 <code>vector</code>）。</p>
+
+      <h3>3.4 一份好用的 <code>.gdbinit</code></h3>
+      <pre class="answer-code-block"><code>set print pretty on           # 结构体分行显示
+set print object on           # 按【实际】类型而非声明类型打印多态对象
+set print static-members off  # 少点噪音
+set print elements 200        # 数组/字符串最多打 200 个元素（默认 200，长了会截断）
+set pagination off            # 不要一屏一屏地 --Type &lt;RET&gt;--
+set confirm off               # 不要每次都问 y/n
+set history save on           # 保存命令历史
+set logging file gdb.log      # 把输出存下来
+set logging on</code></pre>
+
+      <h3>3.5 脚本化 / 批处理（自动化生产分析）</h3>
+      <pre class="answer-code-block"><code># 一条命令导出 core 的全部线程栈，适合放进事故自动分析脚本
+gdb -batch -ex "thread apply all bt full" -ex quit ./prog core &gt; crash.txt
+
+# 从脚本文件执行
+gdb -x commands.gdb ./prog</code></pre>
+
+      <h3>3.6 处理 fork / exec</h3>
+      <pre class="answer-code-block"><code>set follow-fork-mode child     # fork 后跟【子】进程（默认跟父进程）
+set detach-on-fork off         # 父子都不放，可以来回切
+set follow-exec-mode new</code></pre>
+
+      <h3>3.7 优化代码调试：<code>&lt;optimized out&gt;</code> 怎么办</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>症状</th><th>处理</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>变量显示 <code>&lt;optimized out&gt;</code></td><td>改用 <code>-Og</code>（专为调试优化的等级）重编，或从寄存器 <code>info registers</code> 推</td></tr>
+            <tr><td>单步乱跳行号</td><td>指令重排导致，用 <code>-Og</code> 或 <code>-O0</code></td></tr>
+            <tr><td>栈缺失中间帧</td><td>函数被内联；加 <code>-fno-inline -fno-omit-frame-pointer</code></td></tr>
+            <tr><td>完全没有符号</td><td>被 strip 了；用配套的 <code>.debug</code> 文件：<code>symbol-file prog.debug</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>3.8 反向调试（知道就好）</h3>
+      <pre class="answer-code-block"><code>record                # 开始记录
+reverse-step / rs     # ★ 往【回】走一步
+reverse-continue      # 回到上一个断点</code></pre>
+      <p>能「时光倒流」，但极慢且限制多。实际生产更推荐 Mozilla 的 <code>rr</code>（<code>rr record ./prog</code> + <code>rr replay</code>），可确定性重放，是查偶现 bug 的利器。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="playbook">
+      <h2>4. 五个实战剧本</h2>
+
+      <h3>剧本 A · 段错误（SIGSEGV）</h3>
+      <div class="guide-ascii">1. gdb ./prog core
+2. bt                     ← 崩在哪一行
+3. frame N                ← 切到你自己的代码那一帧（不是库里那帧）
+4. info locals / p ptr    ← 看指针值
+      p ptr == 0x0        → 空指针
+      p ptr 是很小的数     → 空指针访问成员（0x8 = 第二个字段偏移）
+      p ptr 是乱七八糟的值  → 野指针 / 已释放 / 栈被写坏
+5. 如果栈本身是乱码 → 栈被破坏，换 ASan 重跑</div>
+
+      <h3>剧本 B · 进程卡死 / 死锁</h3>
+      <pre class="answer-code-block"><code># 最快：不进 gdb，一条命令看全部线程栈
+pstack &lt;pid&gt;          # 或 gstack / eu-stack
+
+# 或者
+gdb -p &lt;pid&gt; -batch -ex "thread apply all bt" -ex detach</code></pre>
+      <div class="guide-ascii">看栈的判读方法：
+
+Thread 3:  __lll_lock_wait → pthread_mutex_lock → Account::transfer  ← 卡在等锁 A
+Thread 5:  __lll_lock_wait → pthread_mutex_lock → Account::refund    ← 卡在等锁 B
+
+→ 两个线程都停在 lock 上 = 典型死锁
+→ 再看各自持有哪把锁（p mutex 或看代码路径），确认是 A→B / B→A 交叉
+
+若多数线程停在 epoll_wait / cv.wait → 不是死锁，是没活干或没被唤醒（漏 notify）</div>
+
+      <h3>剧本 C · 「谁改了我的变量」</h3>
+      <pre class="answer-code-block"><code>gdb ./prog
+start
+watch g_config.timeout       # 或 watch -l obj-&gt;field
+continue
+# 一旦有人写它，gdb 立刻停下并打印：
+#   Old value = 3000
+#   New value = 0
+bt                            # ← 凶手的调用栈就在这</code></pre>
+
+      <h3>剧本 D · 内存越界 / use-after-free</h3>
+      <p>gdb 在这类问题上很吃力（崩溃点往往<strong>离案发现场很远</strong>），直接上 ASan：</p>
+      <pre class="answer-code-block"><code>g++ -g -O1 -fsanitize=address -fno-omit-frame-pointer main.cpp
+./a.out
+# ASan 会直接打印：
+#   heap-buffer-overflow ... WRITE of size 4 at 0x...
+#   #0 in appendOrder() order.cpp:88        ← 出事的地方
+#   allocated by thread T0 here: ...        ← 这块内存是哪儿分配的
+#   freed by thread T0 here: ...            ← 又是在哪儿释放的</code></pre>
+
+      <h3>剧本 E · 只在生产偶现</h3>
+      <div class="guide-ascii">1. 确保 core 能落地：ulimit -c unlimited + core_pattern 配好
+2. Release 也带 -g，不要 strip（把符号单独存一份归档）
+3. 崩溃后自动跑批处理导出：
+     gdb -batch -ex "thread apply all bt full" -ex quit ./prog core > crash.txt
+4. 光靠 core 不够时：
+     - 加轻量埋点（不改代码可用 gdb 的 commands，或 SystemTap / eBPF）
+     - 灰度一台机器开 ASan / TSan 跑
+     - 用 rr 录制可复现的执行序列</div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="sanitizer">
+      <h2>5. Sanitizer · 现代首选</h2>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>Sanitizer 是<strong>编译期给你的代码埋满摄像头</strong>：每次读写内存、每次加解锁都被记录。一旦有人越界或竞争，当场抓现行 —— 而不是等半小时后在别处崩掉。代价是程序变慢、变胖。</p>
+      </div>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>工具</th><th>编译选项</th><th>抓什么</th><th>开销</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>ASan</strong></td><td><code>-fsanitize=address</code></td><td>堆/栈/全局越界、use-after-free、double free、<strong>内存泄漏</strong></td><td>慢 2x，内存 3x</td></tr>
+            <tr><td><strong>TSan</strong></td><td><code>-fsanitize=thread</code></td><td><strong>数据竞争</strong>、锁顺序反转</td><td>慢 5~15x，内存 5~10x</td></tr>
+            <tr><td><strong>UBSan</strong></td><td><code>-fsanitize=undefined</code></td><td>有符号溢出、除零、空指针解引用、<strong>未对齐访问</strong>、错误的类型转换</td><td>慢 1.2x</td></tr>
+            <tr><td>LSan</td><td>ASan 自带</td><td>内存泄漏（也可单用 <code>-fsanitize=leak</code>）</td><td>低</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre class="answer-code-block"><code># 推荐的调试构建
+g++ -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined main.cpp
+
+# 运行期开关（环境变量）
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=0:log_path=./asan ./a.out
+UBSAN_OPTIONS=print_stacktrace=1 ./a.out
+TSAN_OPTIONS=second_deadlock_stack=1 ./a.out</code></pre>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">三个必知</span>
+        <ul>
+          <li><strong>ASan 和 TSan 不能同时开</strong>（内存模型冲突），要分两次跑</li>
+          <li>用 <code>-O1</code> 而不是 <code>-O0</code>：<code>-O0</code> 太慢，且某些检查依赖优化后的布局</li>
+          <li>TSan <strong>只能发现「实际执行到的」竞争</strong>，所以要配合压力测试和多次运行，不是跑一遍没报就等于没问题</li>
+        </ul>
+      </div>
+
+      <h3>Sanitizer vs valgrind 怎么选</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>Sanitizer</th><th>valgrind</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>是否需要重新编译</td><td><strong>需要</strong></td><td><strong>不需要</strong> ← 最大优势</td></tr>
+            <tr><td>速度</td><td>慢 2~15x</td><td>慢 10~50x</td></tr>
+            <tr><td>栈上越界</td><td>✓ 能查</td><td>✗ 查不到</td></tr>
+            <tr><td>未初始化变量</td><td>需 MSan（较难用）</td><td>✓ memcheck 强项</td></tr>
+            <tr><td>适用</td><td>开发/CI 阶段常开</td><td>拿到一个现成二进制就想查</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>结论</strong>：日常开发和 CI 用 Sanitizer；只有二进制、不能重编时用 valgrind。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="valgrind">
+      <h2>6. valgrind 家族</h2>
+      <p>valgrind 的原理是<strong>把程序放进一个虚拟 CPU 里跑</strong>，每条指令都被翻译和检查 —— 所以不用重编译，但很慢。</p>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>子工具</th><th>用途</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>memcheck</strong>（默认）</td><td>内存泄漏、非法读写、<strong>未初始化变量</strong></td></tr>
+            <tr><td><strong>helgrind</strong> / <strong>drd</strong></td><td>数据竞争、锁顺序错误</td></tr>
+            <tr><td><strong>callgrind</strong></td><td>指令级 profiling，配 <code>kcachegrind</code> 看调用图</td></tr>
+            <tr><td><strong>massif</strong></td><td>堆内存快照，画出「内存随时间增长曲线」+ 各处占比</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre class="answer-code-block"><code># 查泄漏（最常用的一条）
+valgrind --leak-check=full --show-leak-kinds=all \
+         --track-origins=yes --log-file=vg.log ./prog
+
+# 查内存增长是谁占的
+valgrind --tool=massif ./prog
+ms_print massif.out.1234
+
+# 查数据竞争
+valgrind --tool=helgrind ./prog</code></pre>
+      <h3>memcheck 报告怎么读</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>分类</th><th>含义</th><th>要紧吗</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>definitely lost</strong></td><td>确定泄漏，没有任何指针指向它</td><td><strong>必须修</strong></td></tr>
+            <tr><td><strong>indirectly lost</strong></td><td>因为它的父节点泄漏而连带泄漏</td><td>修父节点即可</td></tr>
+            <tr><td>possibly lost</td><td>只有指向内部的指针（常见于自定义分配器）</td><td>看情况</td></tr>
+            <tr><td>still reachable</td><td>程序结束时还有指针指着（全局单例、内存池）</td><td>通常<strong>可以忽略</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><code>--track-origins=yes</code> 能告诉你「这个未初始化的值是从哪来的」，值得多花那点时间。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="perf">
+      <h2>7. perf 与火焰图</h2>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>perf 是<strong>给正在跑的程序连续拍快照</strong>（默认每秒几百上千次），统计「每次拍到的时候你在执行哪一行」。拍到次数最多的地方，就是最耗时的地方。因为是采样而不是插桩，<strong>开销极低（几个百分点），可以直接在生产上用</strong>。</p>
+      </div>
+
+      <h3>7.1 从粗到细的三步</h3>
+      <pre class="answer-code-block"><code># ① 先看整体健康度（不改代码，几秒出结果）
+perf stat ./prog
+#   关注：IPC、cache-misses、branch-misses、context-switches
+
+# ② 实时看热点函数（像 top，但看的是函数）
+perf top -p &lt;pid&gt;
+
+# ③ 抓一段时间做详细分析
+perf record -F 99 -g -p &lt;pid&gt; -- sleep 30
+perf report            # 交互式浏览，回车展开调用链</code></pre>
+
+      <h3>7.2 <code>perf stat</code> 关键指标怎么读</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>指标</th><th>健康值</th><th>异常说明什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>IPC</strong>（每周期指令数）</td><td>&gt; 1.5 较好</td><td><strong>&lt; 1 说明大量时间在等内存</strong>，是数据布局/cache 问题</td></tr>
+            <tr><td>cache-misses / cache-references</td><td>&lt; 5%</td><td>高 → 数据不连续、伪共享、结构体太大</td></tr>
+            <tr><td>branch-misses</td><td>&lt; 2%</td><td>高 → 分支不可预测，考虑无分支写法或排序输入</td></tr>
+            <tr><td>context-switches</td><td>越低越好</td><td>高 → 锁竞争激烈、线程过多</td></tr>
+            <tr><td>page-faults</td><td>启动后应趋近 0</td><td>持续增长 → 内存一直在新分配，或缺页没预热</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>7.3 火焰图</h3>
+      <pre class="answer-code-block"><code>git clone https://github.com/brendangregg/FlameGraph
+
+perf record -F 99 -g -p &lt;pid&gt; -- sleep 30
+perf script &gt; out.perf
+./FlameGraph/stackcollapse-perf.pl out.perf &gt; out.folded
+./FlameGraph/flamegraph.pl out.folded &gt; flame.svg</code></pre>
+      <div class="guide-ascii">火焰图怎么看：
+
+  ┌─────────────────────────────────────┐
+  │            main                     │  ← 宽度 = 占用 CPU 的【比例】
+  ├──────────────┬──────────────────────┤
+  │ parseMsg     │   matchOrder         │  ← Y 轴 = 调用【深度】，不是时间
+  ├────┬─────────┼──────┬───────────────┤
+  │... │ memcpy  │ ...  │  std::map::find│  ← 【顶部平顶】= 真正在烧 CPU 的地方
+  └────┴─────────┴──────┴───────────────┘
+
+规则：从上往下找【最宽的平顶】，那就是优化的第一目标。</div>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">前提</span>
+        <p>必须编译时加 <code>-fno-omit-frame-pointer</code>，否则 <code>-g</code> 抓到的调用栈是断的。或者用 <code>perf record --call-graph dwarf</code>（更准但开销大）。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="strace">
+      <h2>8. strace / ltrace · 看它到底在干什么</h2>
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p><code>strace</code> 是<strong>在程序和操作系统之间装了个窃听器</strong>：所有系统调用（开文件、读写、网络、锁等待）连同参数和返回值都被记下来。程序可以骗你，系统调用不会。</p>
+      </div>
+
+      <pre class="answer-code-block"><code>strace -f -T -tt -p &lt;pid&gt;        # 跟踪运行中的进程
+#   -f  跟踪子进程/线程
+#   -T  ★ 显示每个调用【耗时】—— 找卡顿神器
+#   -tt 显示时间戳
+
+strace -c ./prog                  # ★ 汇总统计：哪个 syscall 调用最多/最慢
+strace -e trace=openat ./prog     # 只看开文件（找配置文件在哪）
+strace -e trace=network ./prog    # 只看网络
+strace -o out.txt -f ./prog       # 输出到文件
+
+ltrace ./prog                     # 看【库函数】调用（malloc/strcpy 等）</code></pre>
+
+      <h3>典型判读</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>看到什么</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>卡在 <code>futex(...)</code> 很久</td><td><strong>在等锁</strong>（pthread mutex/条件变量底层就是 futex）</td></tr>
+            <tr><td>卡在 <code>epoll_wait</code> / <code>poll</code></td><td>正常空闲，在等事件</td></tr>
+            <tr><td>卡在 <code>read</code> / <code>write</code> 且耗时长</td><td>IO 慢，或对端不回</td></tr>
+            <tr><td>大量 <code>openat(...) = -1 ENOENT</code></td><td>在到处找文件（库路径/配置路径不对）</td></tr>
+            <tr><td>大量 <code>brk</code> / <code>mmap</code></td><td>频繁申请内存 → 考虑内存池</td></tr>
+            <tr><td>密集的小 <code>write</code></td><td>没做缓冲，每条日志一次系统调用</td></tr>
+            <tr><td><code>EACCES</code> / <code>EPERM</code></td><td>权限问题，一眼定位</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">注意</span>
+        <p><code>strace</code> 会让程序<strong>慢几十倍</strong>（每个系统调用都要陷入 ptrace），生产上只能短时间使用，且对延迟敏感的服务要谨慎。更轻量的替代是 eBPF 系工具（<code>bpftrace</code>、<code>bcc</code>）。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="misc">
+      <h2>9. 生产环境轻量工具箱</h2>
+
+      <h3>9.1 一键看线程栈</h3>
+      <pre class="answer-code-block"><code>pstack &lt;pid&gt;        # 打印所有线程的调用栈，不用进 gdb
+gstack &lt;pid&gt;        # 同上（有些发行版叫这个）
+eu-stack -p &lt;pid&gt;   # elfutils 版本，更快</code></pre>
+
+      <h3>9.2 <code>/proc/&lt;pid&gt;/</code> 是个宝库</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>路径</th><th>能看到什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>status</code></td><td><strong>VmRSS</strong>（真实物理内存）、<code>VmSize</code>、线程数、上下文切换次数</td></tr>
+            <tr><td><code>maps</code> / <code>smaps</code></td><td>内存段布局、加载了哪些 so 及其地址、每段实际占用</td></tr>
+            <tr><td><code>fd/</code></td><td>打开了哪些文件和 socket（<code>ls -l</code> 看得到）</td></tr>
+            <tr><td><code>limits</code></td><td>该进程实际生效的 ulimit（排查「为什么没生成 core」）</td></tr>
+            <tr><td><code>task/&lt;tid&gt;/stack</code></td><td>内核态栈</td></tr>
+            <tr><td><code>environ</code></td><td>启动时的环境变量（排查配置不生效）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>9.3 系统级观测</h3>
+      <pre class="answer-code-block"><code>top -H -p &lt;pid&gt;      # -H 按【线程】显示，看是哪个线程吃 CPU
+pidstat -t -p &lt;pid&gt; 1
+vmstat 1              # r/b 队列、si/so 换页、cs 上下文切换
+iostat -x 1           # %util、await —— 磁盘是不是瓶颈
+free -h               # 注意看 available，不是 free
+pmap -x &lt;pid&gt;         # 内存段明细
+lsof -p &lt;pid&gt;         # 打开的文件/连接
+ss -tanp              # 连接状态（替代 netstat，快得多）
+tcpdump -i any port 8888 -w cap.pcap</code></pre>
+
+      <h3>9.4 二进制与符号</h3>
+      <pre class="answer-code-block"><code>ldd ./prog                          # 依赖哪些动态库、实际解析到哪个路径
+nm -C ./prog | grep Order            # 符号表（-C 自动 demangle）
+c++filt _ZN5Order6submitEv           # 手动把 mangled 名字还原
+addr2line -e ./prog -f -C 0x4005d6   # ★ 崩溃地址 → 文件:行号
+objdump -d --source ./prog           # 反汇编并穿插源码
+readelf -h ./prog                    # ELF 头
+strings ./prog | grep version        # 看看编进去的版本号</code></pre>
+      <p><code>addr2line</code> 在「只有一行崩溃地址、没有 core」时特别救命（前提是拿到同一份带符号的二进制）。</p>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="flags">
+      <h2>10. 编译期就该开好的选项</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>构建类型</th><th>推荐选项</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>日常开发</strong></td><td><code>-Og -g -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer</code></td></tr>
+            <tr><td><strong>CI 额外跑一遍</strong></td><td><code>-fsanitize=thread</code>（单独一次，不能和 ASan 混）</td></tr>
+            <tr><td><strong>Release</strong></td><td><code>-O2 -g -DNDEBUG -fno-omit-frame-pointer</code> ← <strong>保留 -g，不要 strip</strong></td></tr>
+            <tr><td>STL 边界检查（调试构建）</td><td><code>-D_GLIBCXX_ASSERTIONS</code>（轻量）或 <code>-D_GLIBCXX_DEBUG</code>（严格但 ABI 不兼容）</td></tr>
+            <tr><td>安全加固</td><td><code>-fstack-protector-strong -D_FORTIFY_SOURCE=2</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-key">
+        <span class="callout-label">两条最重要的</span>
+        <p><strong>① Release 也要带 <code>-g</code>。</strong>调试符号<strong>不影响运行速度</strong>，只是二进制变大。可以用 <code>objcopy --only-keep-debug</code> 把符号单独抽出来归档，线上放精简版，出事时再配对分析。<br />
+          <strong>② 加 <code>-fno-omit-frame-pointer</code>。</strong>只损失约 1% 性能，却是 perf 火焰图和完整调用栈的前提。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="cheatsheet">
+      <h2>11. 一页速记</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>场景</th><th>一条命令</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>看崩溃栈</td><td><code>gdb ./prog core</code> → <code>bt</code> → <code>frame N</code> → <code>info locals</code></td></tr>
+            <tr><td>查死锁</td><td><code>pstack &lt;pid&gt;</code> 或 <code>thread apply all bt</code></td></tr>
+            <tr><td>谁改了变量</td><td><code>watch var</code> + <code>bt</code></td></tr>
+            <tr><td>只关心某一次循环</td><td><code>break f if id == 8888</code></td></tr>
+            <tr><td>抓异常抛出现场</td><td><code>catch throw</code></td></tr>
+            <tr><td>不改代码加日志</td><td><code>break f</code> + <code>commands / silent / printf / continue / end</code></td></tr>
+            <tr><td>越界 / UAF</td><td><code>-fsanitize=address</code></td></tr>
+            <tr><td>数据竞争</td><td><code>-fsanitize=thread</code></td></tr>
+            <tr><td>内存泄漏（无法重编）</td><td><code>valgrind --leak-check=full --track-origins=yes</code></td></tr>
+            <tr><td>CPU 热点</td><td><code>perf top</code> → <code>perf record -g</code> → 火焰图</td></tr>
+            <tr><td>整体健康度</td><td><code>perf stat</code>（看 IPC 和 cache-misses）</td></tr>
+            <tr><td>卡在哪个系统调用</td><td><code>strace -f -T -p &lt;pid&gt;</code>（<code>futex</code> = 在等锁）</td></tr>
+            <tr><td>真实内存占用</td><td><code>grep VmRSS /proc/&lt;pid&gt;/status</code></td></tr>
+            <tr><td>地址转行号</td><td><code>addr2line -e ./prog -f -C 0x4005d6</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试常被问的三句</span>
+        <p><strong>「你怎么排查线上问题？」</strong>先按现象分类：崩溃看 core、卡住看线程栈、慢看 perf、行为怪看 strace；能复现就上 Sanitizer。<br />
+          <strong>「gdb 你用得最多的功能是什么？」</strong><code>thread apply all bt</code> 查死锁、条件断点定位特定数据、<code>watch</code> 找谁改了变量。<br />
+          <strong>「ASan 和 valgrind 区别？」</strong>ASan 要重编译但快、能查栈越界，适合开发和 CI；valgrind 不用重编译、能查未初始化变量，适合只有二进制的场景。</p>
+      </div>
+
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./index.html?category=%E8%B0%83%E8%AF%95%E5%B7%A5%E5%85%B7%E7%9B%B4%E8%AE%B2">去刷调试工具直讲（13 题）</a>
+        <a class="secondary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20Linux%E4%B8%8E%E8%B0%83%E8%AF%95">恒生 Linux 与调试题</a>
+        <a class="secondary-button" href="./linux-sysprog-notes.html">上一篇：Linux 系统编程</a>
+        <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记。core dump 的生成与配置见「Linux 系统编程」，cache/伪共享等性能背景见「内存与性能」。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./linux-sysprog-notes.html">Linux 系统编程</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>

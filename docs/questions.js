@@ -1607,6 +1607,358 @@
         "时延问题最怕只看平均值，必须盯住分位数和最坏情况。"
       ])
     ],
+    "调试工具直讲": [
+      q("debug-tool-pick", "basic", true, "线上出问题时，你按什么标准选调试工具？", ["排查思路", "工具选型", "调试"], [
+        "调试最耗时的往往不是用工具，而是选错了工具。先把现象归类，工具基本就定了。",
+        "崩溃且有 core，直接 gdb 加载 core 看栈；崩溃却没有 core，多半是被 kill -9 或 OOM Killer 杀的，要去看 dmesg 和 ulimit。",
+        "进程卡住不动，用 pstack 或 gdb attach 打印所有线程栈；CPU 打满用 perf top 和火焰图找热点函数。",
+        "慢但 CPU 不高，说明时间花在等待上，看锁和 IO；行为诡异（读错文件、权限不对）就上 strace，系统调用不会撒谎。",
+        "能重新编译并复现的，优先上 Sanitizer，它会把问题拦在第一现场，而不是等很久之后在别处崩掉。"
+      ], {
+        diagramSteps: [
+          "第一步先问：进程还在不在？不在就是崩溃或被杀，在就是卡住、慢或结果不对。",
+          "崩溃类：有 core 走 gdb，没 core 先查 dmesg 确认是不是被 SIGKILL 带走的。",
+          "卡住类：拿到全部线程栈，看是都停在锁上（死锁）还是停在 epoll_wait（只是没活干）。",
+          "慢速类：先用 perf stat 看是不是在烧 CPU，是就用火焰图找热点，不是就查等待。",
+          "结果错类：能重编就 ASan/TSan，不能重编就 valgrind。",
+          "全程记住留基线：改动前后都要有可对比的数据，否则说不清是不是真修好了。"
+        ],
+        pitfalls: [
+          "一上来就 gdb 单步，其实很多问题（性能、竞争、泄漏）用单步根本查不出来。",
+          "在生产上长时间开 strace，会让程序慢几十倍，对延迟敏感的服务是二次事故。",
+          "只看平均值不看分位数，长尾问题会被完全掩盖。",
+          "拿不到 core 就放弃，其实 ulimit、core_pattern、磁盘空间任何一个没配好都会导致 core 落不了地。"
+        ],
+        complexity: [
+          "这题考的是排查方法论，面试官想听的是分类思维，而不是工具清单。",
+          "回答时最好带一个自己真实排查过的例子：什么现象、怎么缩小范围、最后用哪个工具坐实。"
+        ]
+      }),
+      q("debug-tool-gdb-breakpoint", "basic", true, "gdb 的条件断点怎么用？循环里只想停某一次该怎么办？", ["gdb", "条件断点", "ignore"], [
+        "普通断点在循环里会命中几十万次，根本没法用，条件断点就是为这个场景设计的。",
+        "写法是 break 位置 if 条件，比如 break process if orderId == 88888，只有条件成立才真正停下。",
+        "已经下好的断点也能补条件：condition 2 id == 1001，不用删了重下。",
+        "如果条件不好写，但知道大概第几次出问题，用 ignore 断点号 次数 直接跳过前 N 次。",
+        "还有 tbreak 一次性断点，命中后自动删除，适合只想在初始化时看一眼的场景。"
+      ], {
+        diagramSteps: [
+          "先用 break 文件:行号 或 break 函数名 下一个普通断点，run 起来确认能命中。",
+          "info breakpoints 看断点编号，这个编号后面加条件、删除、禁用都要用。",
+          "条件断点的判断是在 gdb 里做的，所以条件表达式能用当前作用域的变量和函数。",
+          "命中后用 bt 看栈、info locals 看局部变量，确认是不是你要找的那一次。",
+          "如果发现条件写宽了还是停太多次，就在原断点上追加 ignore 跳过一批。",
+          "定位完记得 delete 掉，否则后面 continue 会一直被打断。"
+        ],
+        pitfalls: [
+          "条件断点每次都要在 gdb 里求值，命中次数极多时会明显拖慢程序，条件要尽量写得早筛。",
+          "条件里调用了有副作用的函数，会改变程序行为，等于观察本身干扰了结果。",
+          "在优化过的二进制上，条件里引用的变量可能是 <optimized out>，需要改用 -Og 重编。",
+          "断点设在被内联的函数上可能永远不命中，要加 -fno-inline 或改设在调用点。"
+        ],
+        cppCode: "# 只在特定订单号时停下\nbreak order.cpp:120 if orderId == 88888\n\n# 组合条件\nbreak vec.cpp:42 if i > 10000 && ptr == nullptr\n\n# 给已有的 2 号断点补条件\ncondition 2 price > 100.0\n\n# 跳过 1 号断点的前 5000 次命中\nignore 1 5000\n\n# 一次性断点，命中后自动删除\ntbreak main\n",
+        complexity: [
+          "条件断点是把定位成本从人工数次数变成机器判断，是 gdb 里性价比最高的技巧之一。",
+          "延伸问题常问 watchpoint 和 catch throw，可以顺着一起讲。"
+        ]
+      }),
+      q("debug-tool-gdb-watch", "intermediate", true, "一个变量被莫名其妙改成了脏值，怎么找出是谁改的？", ["gdb", "watchpoint", "观察点"], [
+        "用观察点 watch，这是 gdb 里最被低估的功能，专门回答“到底是谁改了我的变量”。",
+        "watch 变量名 表示值被修改时停下，并且会同时打印改前值和改后值；停下后一个 bt 就是凶手的调用栈。",
+        "rwatch 是被读取时停，awatch 是读或写都停，按需要选。",
+        "指针成员建议用 watch -l ptr->field，-l 会锁定当前地址，避免指针本身变了之后跟丢。",
+        "硬件观察点通常只有 4 个（受 CPU 调试寄存器限制），超了会退化成软件观察点，速度慢上百倍。"
+      ], {
+        diagramSteps: [
+          "先 start 让程序停在 main，确保要观察的变量已经存在、地址已确定。",
+          "watch 目标变量，gdb 会用 CPU 的调试寄存器盯住这块内存。",
+          "continue 让程序跑，一旦有任何代码写这块内存，立刻中断。",
+          "gdb 会打印 Old value 和 New value，一眼就知道被改成了什么。",
+          "紧接着 bt 打印调用栈，写入的代码路径就完全暴露了。",
+          "如果怀疑是越界写而不是正常赋值，栈里会出现完全不相干的函数，这时应转去用 ASan。"
+        ],
+        pitfalls: [
+          "变量离开作用域后观察点会自动失效，局部变量要注意观察时机。",
+          "硬件观察点数量有限，一次盯太多会退化成软件观察点，程序慢到没法跑。",
+          "观察的是地址不是名字，如果被观察对象所在的容器扩容搬家了，原地址就不再是那个变量。",
+          "多线程下任何线程的写入都会触发，要结合 info threads 确认是哪个线程干的。"
+        ],
+        cppCode: "gdb ./prog\nstart\n\n# 盯住全局配置里的超时字段\nwatch g_config.timeout\n\n# 锁定地址，避免 ptr 改指向后跟丢\nwatch -l conn->state\n\ncontinue\n# Hardware watchpoint 2: g_config.timeout\n#   Old value = 3000\n#   New value = 0\n\nbt          # 凶手的调用栈就在这里\n",
+        complexity: [
+          "观察点把“全代码搜索谁写了这个变量”变成一次运行就定位，尤其适合有大量间接赋值的老代码。",
+          "如果发现是越界写导致的内存被踩，后续应该切到 AddressSanitizer 继续查。"
+        ]
+      }),
+      q("debug-tool-gdb-deadlock", "intermediate", true, "服务卡死不响应，怎么用 gdb 判断是不是死锁？", ["gdb", "死锁", "线程栈"], [
+        "核心命令只有一条：thread apply all bt，把所有线程的调用栈一次打出来。",
+        "如果不想让 gdb 长时间占住进程，用 pstack pid 更快，或者 gdb -p pid -batch -ex \"thread apply all bt\" -ex detach 一次性拿完就走。",
+        "判读方法：多个线程都停在 pthread_mutex_lock 或 __lll_lock_wait 上，基本可以确定是锁等待；再看它们各自已经持有哪把锁，确认是不是 A→B、B→A 交叉。",
+        "如果绝大多数线程停在 epoll_wait 或条件变量的 wait 上，那不是死锁，而是没活干，或者是漏了 notify 导致唤不醒。",
+        "还要排除一种情况：卡在 read/write 等 IO 上，那是对端不回包或磁盘慢，属于外部依赖问题而不是本地死锁。"
+      ], {
+        diagramSteps: [
+          "先确认进程还活着但 CPU 占用很低，这符合“在等待”而不是“在忙循环”的特征。",
+          "attach 上去或用 pstack 拿到全部线程栈，注意 gdb attach 会暂停整个进程，生产上要快进快出。",
+          "扫一遍所有栈顶函数，把线程分成三类：等锁的、等事件的、等 IO 的。",
+          "对等锁的那批，找出它们停在哪一行，回到代码看这条路径上此前已经加了哪些锁。",
+          "画出“谁持有什么、谁在等什么”的关系，出现环就是死锁。",
+          "没有环但都在等锁，说明是某个线程长期持锁不放，要去看那个线程在干什么慢活。"
+        ],
+        pitfalls: [
+          "用 quit 退出 gdb 在某些情况下会连带杀掉被调试进程，生产上必须用 detach。",
+          "只看一个线程的栈得不出结论，死锁本质是多线程之间的关系。",
+          "线程栈里全是 ?? 说明缺符号，要确认线上二进制没有被 strip、且和符号文件版本匹配。",
+          "把“大量线程停在 epoll_wait”误判成死锁，那其实是正常空闲状态。"
+        ],
+        cppCode: "# 最快：不进交互式 gdb\npstack <pid>\n\n# 或者一次性导出后立刻脱离\ngdb -p <pid> -batch -ex \"thread apply all bt\" -ex detach\n\n# 典型的死锁栈形态：\n# Thread 3: __lll_lock_wait -> pthread_mutex_lock -> Account::transfer\n# Thread 5: __lll_lock_wait -> pthread_mutex_lock -> Account::refund\n#   两个线程都卡在 lock 上，且互相持有对方要的锁\n",
+        complexity: [
+          "这是线上 hang 类事故最常用的一招，几乎不需要额外准备，成本极低。",
+          "预防层面可以讲固定加锁顺序、std::scoped_lock 一次锁多把、以及尽量缩小临界区。"
+        ]
+      }),
+      q("debug-tool-gdb-catch-throw", "advanced", false, "怎么抓到 C++ 异常抛出的第一现场？", ["gdb", "catch throw", "异常"], [
+        "在 catch 块里下断点是没用的，因为那时栈已经展开完了，真正抛出点的现场已经销毁。",
+        "正确做法是 catch throw，它会在异常被抛出的那一刻停下，此时抛出点的完整调用栈还在。",
+        "等价写法是 break __cxa_throw，效果一样，某些老版本 gdb 上更可靠。",
+        "catch catch 是在异常被捕获时停，配合使用可以看清一次异常的完整传播路径。",
+        "assert 失败和未捕获异常最终都会走到 abort，所以 break abort 也是常备的一手。"
+      ], {
+        diagramSteps: [
+          "启动 gdb，先 catch throw 注册异常捕获点，再 run。",
+          "程序抛出异常时 gdb 立刻中断，此时还没有开始栈展开。",
+          "bt 打印栈，最顶上几帧就是抛出异常的具体代码位置。",
+          "info locals 看当时的局部变量，判断是什么输入触发了这个异常。",
+          "如果异常太多，可以配合条件：先跑到可疑阶段再启用这个捕获点。",
+          "确认原因后 delete 掉捕获点，继续验证修复效果。"
+        ],
+        pitfalls: [
+          "catch throw 会拦下所有异常，包括框架内部正常使用的异常，噪音可能很大。",
+          "在 release 优化构建上，栈可能因为内联而不完整，必要时加 -fno-inline。",
+          "只关注最后那个 catch 而忽略中间的 rethrow，会漏掉真正的源头。",
+          "有些库把异常当控制流用，看到异常不等于就是 bug，要结合业务判断。"
+        ],
+        cppCode: "gdb ./prog\ncatch throw          # 异常抛出瞬间停下\nrun\nbt                   # 抛出点的完整调用栈\ninfo locals\n\n# 其他常用捕获点\ncatch catch          # 被捕获时停\nbreak abort          # assert 失败 / 未捕获异常最终落点\ncatch syscall write  # 特定系统调用\n",
+        complexity: [
+          "这个技巧的价值在于把“事后看结果”变成“当场看原因”，对偶发异常特别有效。",
+          "延伸可以讲 noexcept 违约会直接 terminate，此时也是走 abort 路径。"
+        ]
+      }),
+      q("debug-tool-gdb-logging", "advanced", false, "生产上不方便改代码重编译，怎么临时加日志？", ["gdb", "commands", "批处理"], [
+        "gdb 的 commands 块可以让断点命中后自动执行一串命令，相当于不改代码就插了一行日志。",
+        "典型写法是 silent 关掉噪音、printf 打印关心的字段、最后 continue 自动放行，程序几乎照常跑。",
+        "配合 -batch 模式还能把整个分析脚本化，比如崩溃后自动导出所有线程栈，放进事故自动分析流程。",
+        "需要注意每次命中都要在 gdb 里求值和格式化，高频路径上开销很大，只适合低频事件。",
+        "更轻量的生产方案是 eBPF 系工具（bpftrace/bcc）或 SystemTap，它们的开销比 ptrace 低得多。"
+      ], {
+        diagramSteps: [
+          "先在目标函数上下断点，确认能命中。",
+          "输入 commands 进入命令块编辑模式，gdb 会提示后续输入的命令在命中时执行。",
+          "第一行写 silent，避免每次都打印一大段断点信息。",
+          "中间写 printf 或 p，把想看的变量输出出来。",
+          "最后一行写 continue，让程序自动继续，不需要人工敲。",
+          "输入 end 结束定义，之后 run 或 continue 即可自动收集日志。"
+        ],
+        pitfalls: [
+          "命中频率高时会严重拖慢程序，生产上要先估算调用量。",
+          "printf 的格式串和参数类型不匹配会导致 gdb 报错甚至中断收集。",
+          "attach 期间进程是被暂停的，长时间挂着会影响线上服务。",
+          "忘记写 continue 会让程序停住不动，看起来像卡死。"
+        ],
+        cppCode: "break handleOrder\ncommands\n  silent\n  printf \"id=%d price=%f\\n\", order.id, order.price\n  continue\nend\n\n# 脚本化：崩溃后自动导出全部线程栈\n# gdb -batch -ex \"thread apply all bt full\" -ex quit ./prog core > crash.txt\n",
+        complexity: [
+          "这是“不重启、不发版”就能拿到现场信息的手段，在不允许随意重启的交易系统里很实用。",
+          "回答时最好补一句风险控制：先在预发验证开销，再决定是否上生产。"
+        ]
+      }),
+      q("debug-tool-asan", "intermediate", true, "AddressSanitizer 能查什么？和普通调试有什么本质区别？", ["ASan", "内存越界", "sanitizer"], [
+        "ASan 是编译期插桩：在每次内存读写前后插入检查代码，并在每块分配的内存周围放上“红区”哨兵。",
+        "它能抓堆/栈/全局越界、use-after-free、double free，以及程序退出时的内存泄漏。",
+        "和 gdb 最本质的区别是抓的时机：越界写通常不会当场崩，而是很久以后在别处崩，gdb 看到的现场已经不是案发现场；ASan 是当场抓现行。",
+        "报告里会同时给出三处栈：出事的位置、这块内存在哪里分配、又在哪里被释放，基本可以直接定位。",
+        "代价是速度慢约 2 倍、内存约 3 倍，所以适合开发和 CI 常开，不适合直接上生产主链路。"
+      ], {
+        diagramSteps: [
+          "编译时加 -fsanitize=address -g -O1 -fno-omit-frame-pointer，让编译器插桩并保留调用栈。",
+          "运行时 ASan 会接管 malloc/free，在每块内存前后额外留出红区。",
+          "程序每次读写内存前，插桩代码先查影子内存判断这个地址是否合法。",
+          "一旦读写落到红区或已释放区域，立即打印报告并终止。",
+          "报告的第一段是出错类型和位置，第二段是这块内存的分配栈，第三段是释放栈。",
+          "按这三处栈回到代码，通常几分钟内就能确认是谁越界或谁提前释放了。"
+        ],
+        pitfalls: [
+          "ASan 和 TSan 不能同时开启，内存模型冲突，必须分两次跑。",
+          "用 -O0 会非常慢，推荐 -O1，既保留可读栈又不至于太慢。",
+          "内存放大 3 倍，内存本来就吃紧的服务可能直接跑不起来。",
+          "它只能发现实际执行到的路径，跑一遍没报错不等于代码没问题，要配合覆盖较全的用例。"
+        ],
+        cppCode: "g++ -g -O1 -fno-omit-frame-pointer -fsanitize=address main.cpp\n./a.out\n\n# 运行期开关\n# ASAN_OPTIONS=detect_leaks=1:halt_on_error=0:log_path=./asan ./a.out\n\n# 典型报告结构：\n#   ERROR: AddressSanitizer: heap-buffer-overflow\n#   WRITE of size 4 at 0x... thread T0\n#     #0 appendOrder() order.cpp:88     <- 出事的地方\n#   allocated by thread T0 here: ...    <- 这块内存哪儿分配的\n#   freed by thread T0 here: ...        <- 又是在哪儿释放的\n",
+        complexity: [
+          "面试里常和 valgrind 一起被问，关键差异是要不要重新编译、能不能查栈上越界、速度差多少。",
+          "可以补一句工程实践：CI 里跑一条 ASan 流水线，比事后查 core 划算得多。"
+        ]
+      }),
+      q("debug-tool-tsan", "advanced", false, "怎么发现代码里的数据竞争？ThreadSanitizer 怎么用？", ["TSan", "数据竞争", "并发"], [
+        "数据竞争靠人眼几乎查不出来，因为它只在特定的线程交织下才暴露，测试环境常年不复现。",
+        "TSan 用 -fsanitize=thread 开启，原理是记录每次内存访问的线程和锁的持有状态，用 happens-before 关系判断两次访问之间有没有正确同步。",
+        "报告会直接给出两个冲突访问的调用栈，以及各自持有的锁，非常直观。",
+        "代价很大：慢 5 到 15 倍、内存涨 5 到 10 倍，所以一般只在 CI 或专门的压测环境里跑。",
+        "关键限制是它只能发现实际执行到的竞争，所以要配合高并发压力测试和多次运行，跑一遍干净不等于没问题。"
+      ], {
+        diagramSteps: [
+          "用 -fsanitize=thread -g -O1 单独编译一份二进制，注意不能和 ASan 混编。",
+          "跑覆盖多线程路径的用例，最好加大并发和运行时长，增加交织出现的概率。",
+          "TSan 在运行时为每块内存维护最近的访问记录和当时的同步状态。",
+          "当发现两次访问同一地址、至少一次是写、且它们之间没有 happens-before 关系时，判定为竞争。",
+          "报告中给出两处栈和各自的锁集合，对照代码就能看出漏加了哪把锁。",
+          "修复后重跑，并把这条用例固化进 CI，防止回归。"
+        ],
+        pitfalls: [
+          "误以为加了 volatile 就线程安全，volatile 不提供原子性也不提供内存序，TSan 照样报。",
+          "自己写的无锁结构 TSan 可能误报，需要用 annotation 显式告诉它同步语义。",
+          "开销太大导致时序完全改变，某些竞争反而不出现了，所以要多跑几轮。",
+          "只跑单元测试不跑并发压测，等于没用，因为竞争需要真实交织才会触发。"
+        ],
+        cppCode: "g++ -g -O1 -fsanitize=thread main.cpp\nTSAN_OPTIONS=second_deadlock_stack=1 ./a.out\n\n# 典型报告：\n#   WARNING: ThreadSanitizer: data race\n#   Write of size 8 by thread T2:\n#     #0 OrderBook::insert() book.cpp:57\n#   Previous read of size 8 by thread T1:\n#     #0 OrderBook::snapshot() book.cpp:91\n#   Mutex M1 acquired by T1 but not by T2   <- 漏加锁的证据\n",
+        complexity: [
+          "TSan 属于“找得到就赚到”的工具，找不到不代表安全，这点面试时说清楚会显得很扎实。",
+          "可以顺带讲数据竞争和竞态条件的区别：前者是内存层面的未定义行为，后者是逻辑层面依赖时序。"
+        ]
+      }),
+      q("debug-tool-valgrind", "intermediate", true, "valgrind 和 Sanitizer 怎么选？memcheck 的报告怎么读？", ["valgrind", "memcheck", "内存泄漏"], [
+        "最大差别是要不要重新编译：valgrind 直接拿现成二进制就能跑，Sanitizer 必须重编，这决定了各自的适用场景。",
+        "valgrind 的原理是把程序放进一个虚拟 CPU 里逐条翻译执行，所以不用插桩但很慢，通常慢 10 到 50 倍。",
+        "能力上各有长短：valgrind 的 memcheck 能查未初始化变量，这是 ASan 查不了的；但 ASan 能查栈上越界，valgrind 查不到。",
+        "memcheck 的泄漏报告分四类，definitely lost 必须修，indirectly lost 修父节点即可，possibly lost 看情况，still reachable 通常可以忽略。",
+        "结论是：开发和 CI 阶段常开 Sanitizer；只有二进制、不能重编时用 valgrind。"
+      ], {
+        diagramSteps: [
+          "先确认能不能重新编译，这一步直接决定选哪个工具。",
+          "选 valgrind 时加上 --leak-check=full --show-leak-kinds=all --track-origins=yes，信息最全。",
+          "--track-origins 会告诉你未初始化的值是从哪来的，多花的时间很值。",
+          "跑完先看 definitely lost，这些是真正没有任何指针指向的泄漏。",
+          "still reachable 常常来自全局单例和内存池，程序退出时还被指着，一般不用管。",
+          "查内存持续增长换 massif 子工具，它能画出内存随时间的曲线和各处占比。"
+        ],
+        pitfalls: [
+          "把 still reachable 当泄漏去修，浪费大量时间在单例和内存池上。",
+          "在慢 50 倍的环境下跑带超时的服务，会因为超时触发完全不同的代码路径。",
+          "自定义内存池会让 memcheck 失去追踪能力，需要用 valgrind 的客户端请求宏做标注。",
+          "helgrind 对无锁代码误报率较高，看到报告要先确认是不是真问题。"
+        ],
+        cppCode: "# 查泄漏（最常用的一条）\nvalgrind --leak-check=full --show-leak-kinds=all \\\n         --track-origins=yes --log-file=vg.log ./prog\n\n# 查内存增长是谁占的\nvalgrind --tool=massif ./prog\nms_print massif.out.1234\n\n# 查数据竞争\nvalgrind --tool=helgrind ./prog\n",
+        complexity: [
+          "选型题在面试里出现频率很高，回答时按“要不要重编译、速度、能查什么”三个维度对比最清楚。",
+          "补一句实践结论会加分：日常靠 Sanitizer，救场靠 valgrind。"
+        ]
+      }),
+      q("debug-tool-perf-stat", "intermediate", true, "perf stat 输出的 IPC、cache-misses 怎么解读？", ["perf", "IPC", "cache"], [
+        "perf 是采样而不是插桩，开销只有几个百分点，可以直接在生产上用，这是它相对 valgrind 的最大优势。",
+        "perf stat 不改代码、几秒出结果，适合作为性能排查的第一步，先看整体健康度再决定往哪个方向深挖。",
+        "IPC（每周期指令数）是最重要的指标：大于 1.5 算健康，小于 1 说明 CPU 大量时间在等内存，问题多半出在数据布局而不是算法。",
+        "cache-misses 占 cache-references 超过 5% 说明数据不连续或结构体太大，可能还有伪共享；branch-misses 超过 2% 说明分支不可预测。",
+        "context-switches 高说明锁竞争激烈或线程开太多；page-faults 在启动后仍持续增长，说明内存一直在新分配或缺页没预热。"
+      ], {
+        diagramSteps: [
+          "先跑 perf stat ./prog 拿到一组基线数字，注意要在有代表性的负载下测。",
+          "看 IPC：低于 1 就先怀疑访存，去看数据结构是不是连续、有没有伪共享。",
+          "看 cache-miss 率：高就检查结构体大小、成员排列、是否该用 vector 替代 list。",
+          "看 context-switches：高就去查锁竞争，配合 strace 看 futex 调用量。",
+          "确认是 CPU 密集后，用 perf record -g 抓一段，再用 perf report 或火焰图定位到具体函数。",
+          "改动之后用同样的命令重测，对比同一组指标，避免凭感觉判断是否变快。"
+        ],
+        pitfalls: [
+          "不加 -fno-omit-frame-pointer 就抓不到完整调用栈，火焰图会是断的。",
+          "在没有代表性负载的空转状态下测，数字毫无意义。",
+          "只看 CPU 时间不看等待时间，慢但 CPU 不高的问题会被完全漏掉。",
+          "容器或虚拟机里某些硬件计数器不可用，需要确认 perf 事件是否真的被采集到。"
+        ],
+        cppCode: "# 第一步：整体健康度\nperf stat ./prog\n\n# 第二步：实时热点（像 top，但看的是函数）\nperf top -p <pid>\n\n# 第三步：抓一段做详细分析\nperf record -F 99 -g -p <pid> -- sleep 30\nperf report\n",
+        complexity: [
+          "把 IPC 和 cache-miss 讲清楚，能体现你对硬件层面的理解，而不只是会用工具。",
+          "可以顺着讲到内存对齐、结构体成员排序和 cache 伪共享，这些都是降低 cache-miss 的具体手段。"
+        ]
+      }),
+      q("debug-tool-flamegraph", "advanced", true, "火焰图怎么生成？怎么看？", ["火焰图", "perf", "性能分析"], [
+        "生成流程是三步：perf record 采样、perf script 导出、FlameGraph 脚本折叠并画成 SVG。",
+        "看图的规则很简单：横轴宽度代表占用 CPU 的比例，纵轴是调用深度而不是时间，颜色没有含义。",
+        "重点找“最宽的平顶”，也就是又宽又没有子调用的那一块，那里就是真正在烧 CPU 的地方，是优化的第一目标。",
+        "前提是编译时加了 -fno-omit-frame-pointer，否则调用栈是断的，图会显示成一堆孤立的短柱。",
+        "除了 CPU 火焰图，还有 off-CPU 火焰图，专门看线程阻塞在哪里，适合排查“慢但 CPU 不高”的问题。"
+      ], {
+        diagramSteps: [
+          "用 perf record -F 99 -g 抓样本，99 而不是 100 是为了避开与周期性任务同频共振。",
+          "perf script 把二进制的采样数据导出成文本形式的调用栈。",
+          "stackcollapse-perf.pl 把相同的调用栈合并计数，变成“栈;栈;栈 次数”的一行行数据。",
+          "flamegraph.pl 把折叠后的数据画成 SVG，相同前缀的栈自动堆叠在一起。",
+          "在浏览器里打开 SVG，可以点击任意方块下钻，也可以用搜索高亮某个函数。",
+          "从上往下扫描，找最宽的平顶，那就是热点；如果热点在库函数里，往下看是谁调用的它。"
+        ],
+        pitfalls: [
+          "误以为纵轴是时间轴，其实纵轴只是调用深度，横向顺序也只是字母序而非执行顺序。",
+          "缺少 frame pointer 导致栈断裂，图上全是一层高的方块，等于白抓。",
+          "采样时间太短，偶发热点采不到；建议至少抓 30 秒以上有代表性的负载。",
+          "只做 CPU 火焰图，遇到 IO 或锁等待型的慢会一无所获，这时要做 off-CPU 火焰图。"
+        ],
+        cppCode: "git clone https://github.com/brendangregg/FlameGraph\n\nperf record -F 99 -g -p <pid> -- sleep 30\nperf script > out.perf\n./FlameGraph/stackcollapse-perf.pl out.perf > out.folded\n./FlameGraph/flamegraph.pl out.folded > flame.svg\n\n# 编译时务必带上：\n#   -g -fno-omit-frame-pointer\n",
+        complexity: [
+          "火焰图的价值是把几十万条采样压缩成一张能一眼看懂的图，是性能优化的通用起点。",
+          "回答时可以补充：优化前后各出一张图对比，是最有说服力的成果展示方式。"
+        ]
+      }),
+      q("debug-tool-strace", "intermediate", true, "strace 怎么用？看到进程卡在 futex 说明什么？", ["strace", "系统调用", "排障"], [
+        "strace 相当于在程序和操作系统之间装了个窃听器，所有系统调用连同参数和返回值都被记录，程序可以骗你但系统调用不会。",
+        "最有用的参数是 -T（显示每个调用的耗时）和 -f（跟踪子进程和线程），排查卡顿时这两个基本必加。",
+        "看到长时间卡在 futex 上，说明在等锁，因为 pthread 的 mutex 和条件变量底层都是 futex。",
+        "卡在 epoll_wait 或 poll 上是正常空闲；卡在 read/write 上说明 IO 慢或对端不回；大量 openat 返回 ENOENT 说明在到处找文件。",
+        "代价是每个系统调用都要陷入 ptrace，程序会慢几十倍，生产上只能短时间使用，更轻量的替代是 bpftrace 这类 eBPF 工具。"
+      ], {
+        diagramSteps: [
+          "先用 top 确认 CPU 占用低，符合“在等待”的特征，再决定用 strace。",
+          "strace -f -T -tt -p <pid> 附加上去，观察几秒钟的调用序列。",
+          "看反复出现或长时间停住的那个系统调用，它就是等待点。",
+          "futex 表示等锁，接下来该转去看线程栈确认是哪把锁；read/write 表示等 IO，去查对端和磁盘。",
+          "如果想要统计视角，用 strace -c 汇总，直接看哪个调用次数最多、总耗时最长。",
+          "定位完立刻断开，不要长期挂着影响线上服务。"
+        ],
+        pitfalls: [
+          "在延迟敏感的交易主链路上开 strace，可能直接把服务拖垮，属于二次事故。",
+          "只看调用名不看返回值，会漏掉 EACCES、ENOENT 这类一眼能定位的错误。",
+          "不加 -f 时看不到线程和子进程的行为，多线程服务基本等于没看。",
+          "把 epoll_wait 上的等待误判成卡死，那其实是正常的空闲状态。"
+        ],
+        cppCode: "# 跟踪运行中的进程，显示耗时和时间戳\nstrace -f -T -tt -p <pid>\n\n# 汇总统计：哪个系统调用最多/最慢\nstrace -c ./prog\n\n# 只看某一类\nstrace -e trace=openat ./prog    # 找配置文件在哪\nstrace -e trace=network ./prog   # 只看网络\n\n# 判读：futex = 等锁；epoll_wait = 正常空闲；\n#       大量 brk/mmap = 频繁申请内存，考虑内存池\n",
+        complexity: [
+          "strace 的定位是“定性”工具：先确认时间花在哪一类等待上，再换更精确的工具深入。",
+          "面试里常和 perf 一起问，区别是 strace 看系统调用轨迹，perf 看 CPU 热点采样。"
+        ]
+      }),
+      q("debug-tool-build-flags", "basic", true, "为了以后好排查，编译选项该怎么配？", ["编译选项", "调试符号", "frame pointer"], [
+        "最重要的一条：Release 也要带 -g。调试符号不影响运行速度，只是二进制变大，但没有它 core 文件基本没用。",
+        "不要 strip；如果介意体积，用 objcopy --only-keep-debug 把符号单独抽出来归档，线上放精简版，出事时再配对分析。",
+        "第二条是加 -fno-omit-frame-pointer，只损失约 1% 性能，却是 perf 火焰图和完整调用栈的前提。",
+        "日常开发构建推荐 -Og -g -Wall -Wextra 再叠加 -fsanitize=address,undefined，把问题拦在开发阶段。",
+        "调试构建还可以加 -D_GLIBCXX_ASSERTIONS 打开 STL 的轻量边界检查，比 -D_GLIBCXX_DEBUG 温和且不破坏 ABI。"
+      ], {
+        diagramSteps: [
+          "先区分三种构建：日常开发、CI 检查、线上发布，它们的选项目标不同。",
+          "开发构建追求“早发现”，用 -Og 保证可调试，叠加 ASan 和 UBSan。",
+          "CI 额外单独跑一条 TSan 流水线，因为它不能和 ASan 混编。",
+          "发布构建追求性能，用 -O2 -DNDEBUG，但必须保留 -g 和 frame pointer。",
+          "构建产物同时归档一份带完整符号的版本，和线上版本一一对应。",
+          "线上崩溃后，用归档的符号文件配合 core 分析，或用 addr2line 把地址翻回行号。"
+        ],
+        pitfalls: [
+          "为了减小体积而 strip 掉符号，出事后 core 里全是 ?? ，等于白留。",
+          "符号文件和线上二进制版本对不上，栈会显示成完全错误的函数名，比没有还危险。",
+          "-D_GLIBCXX_DEBUG 会改变 STL 的 ABI，混用会导致诡异崩溃，只能整个项目统一开。",
+          "在 Release 上开 Sanitizer 直接上线，性能和内存都扛不住。"
+        ],
+        cppCode: "# 日常开发\ng++ -Og -g -Wall -Wextra -fno-omit-frame-pointer \\\n    -fsanitize=address,undefined -D_GLIBCXX_ASSERTIONS main.cpp\n\n# CI 额外单独跑一次（不能和 ASan 混）\ng++ -O1 -g -fsanitize=thread main.cpp\n\n# 线上发布：保留 -g，不要 strip\ng++ -O2 -g -DNDEBUG -fno-omit-frame-pointer main.cpp\n\n# 符号单独归档\nobjcopy --only-keep-debug prog prog.debug\nobjcopy --strip-debug prog\nobjcopy --add-gnu-debuglink=prog.debug prog\n",
+        complexity: [
+          "这题看似基础，实际很能区分有没有真正处理过线上事故的人。",
+          "回答时强调“可观测性要在编译期就设计好”，比事后补救有效得多。"
+        ]
+      })
+    ],
     "性能优化": [
       q("perf-cpu-high", "basic", true, "CPU 飙高时你一般怎么排查？", ["CPU", "perf"], [
         "先定位是哪个进程、哪个线程最忙，再区分用户态还是系统态。",
@@ -2830,6 +3182,27 @@
         "表现像锁竞争一样把 CPU 打满，但代码里可能根本没有显式锁。",
         "缓解方式包括按缓存行对齐隔离、减少共享写、改成线程本地聚合再汇总。",
         "这是性能加分题，能讲清现象和定位思路就很加分。"
+      ]),
+      q("hs-cpp-alignment", "intermediate", true, "内存对齐是怎么回事？结构体成员顺序为什么会影响大小？", ["内存对齐", "padding", "结构体"], [
+        "CPU 读内存是按固定宽度成块搬运的，地址对齐时一次就能取到，不对齐就要取两次再拼接，所以硬件和编译器都倾向于对齐。",
+        "每个成员按自身大小对齐，结构体整体再按最大成员对齐，编译器会在中间和末尾插入 padding 补齐。",
+        "同样的字段，char/int/char 的排列可能占 12 字节，而 int/char/char 只占 8 字节，差别就来自 padding。",
+        "实践上把大成员放前面、小成员集中放后面，能明显缩小结构体；结构体变小意味着一个缓存行能装下更多元素，命中率更高。",
+        "可以用 alignas 显式指定对齐，用 offsetof 和 sizeof 验证实际布局，不要靠猜。"
+      ]),
+      q("hs-cpp-memory-pool", "advanced", true, "为什么交易系统热路径常自己做内存池？怎么实现？", ["内存池", "分配器", "低延迟"], [
+        "通用 malloc 要处理任意大小、多线程竞争和碎片，路径长且延迟不稳定，这种抖动在低延迟场景不可接受。",
+        "内存池的思路是启动时一次性向系统要一大块，之后在这块里按固定大小切分，分配和回收都变成链表摘挂，是常数时间。",
+        "常用侵入式空闲链表：空闲块本身的前几个字节就存下一个空闲块的地址，不需要额外的管理内存。",
+        "对象构造用 placement new 在已有内存上构造，析构时显式调用析构函数再把块还回链表，注意这时不能用 delete。",
+        "还要考虑多线程：每个线程一个本地池可以完全避免锁竞争，代价是内存利用率下降，需要按业务权衡。"
+      ]),
+      q("hs-cpp-stl-choice", "intermediate", true, "vector、list、map、unordered_map 在热路径上怎么选？", ["STL", "容器选型", "缓存"], [
+        "先看复杂度，但更要看缓存友好度，实际性能经常和纸面复杂度不一致。",
+        "vector 内存连续，遍历时缓存命中率极高，绝大多数场景应该是默认选择；缺点是中间插入删除是 O(n)，扩容会导致迭代器失效。",
+        "list 的插入删除是 O(1)，但每个节点单独分配、内存分散，遍历时几乎每次都 cache miss，实际上很少比 vector 快。",
+        "map 是红黑树，有序、稳定 O(log n)，插入不会让已有迭代器失效；unordered_map 平均 O(1) 但常数更大、内存更散，且 rehash 会让迭代器失效。",
+        "元素少的时候（几十个以内），排序的 vector 加二分往往比 map 和 unordered_map 都快，因为它对缓存最友好。"
       ])
     ],
     "恒生 / Linux与调试": [
@@ -2874,6 +3247,48 @@
         "perf 更适合 CPU 热点与采样分析，找用户态热点函数。",
         "高频路径上长期开 strace 开销大，定位后应及时关掉。",
         "组合用法：先定性资源类型，再选对工具深入。"
+      ]),
+      q("hs-linux-core-missing", "intermediate", true, "服务崩了却没有 core 文件，可能是什么原因？", ["core dump", "ulimit", "core_pattern"], [
+        "先确认 ulimit -c 是不是 0，很多发行版默认就是 0，等于关掉了 core。",
+        "再看 /proc/sys/kernel/core_pattern，如果被管道给了 systemd-coredump 或 apport，core 其实在别处，用 coredumpctl 取。",
+        "程序如果调用过 setuid 或设置了权限位，内核默认不生成 core，需要打开 suid_dumpable。",
+        "还要检查落盘目录是否存在、是否可写、磁盘是否已满，以及容器里是否共享了宿主机的 core_pattern。",
+        "最后一种可能是根本没崩：被 kill -9 或 OOM Killer 杀掉不会产生 core，去 dmesg 里搜 Out of memory 就能确认。"
+      ]),
+      q("hs-linux-deadlock-live", "intermediate", true, "线上服务卡死不响应，你的排查步骤是什么？", ["死锁", "hang", "线程栈"], [
+        "先看 CPU：占用低说明在等待，占用高说明在忙循环，两条路完全不同。",
+        "等待类的第一步是拿全部线程栈，用 pstack pid 或 gdb -p pid -batch -ex \"thread apply all bt\" -ex detach，快进快出不影响服务。",
+        "多个线程停在 pthread_mutex_lock 上就是锁等待，接着确认它们各自已持有哪把锁，出现交叉就是死锁。",
+        "如果线程都停在 epoll_wait 或条件变量上，那不是死锁，要怀疑是漏了 notify，或者上游根本没来数据。",
+        "还要排除卡在 read/write 的情况，那属于对端不回包或磁盘慢，是外部依赖问题。"
+      ]),
+      q("hs-linux-epoll-lt-et", "advanced", true, "epoll 的 LT 和 ET 有什么区别？内部结构是怎样的？", ["epoll", "LT", "ET"], [
+        "epoll 内部主要是两部分：一棵红黑树保存所有被监听的 fd，一个就绪链表保存已经有事件的 fd。",
+        "关键在于就绪不是靠轮询发现的，而是网卡中断触发内核回调，把 fd 主动挂到就绪链表上，所以 epoll_wait 的开销只和就绪数量有关，与总连接数无关。",
+        "LT 是水平触发：只要缓冲区还有数据就会一直通知，编程简单容错性好，是默认模式。",
+        "ET 是边缘触发：只在状态从无到有的那一刻通知一次，必须循环读到返回 EAGAIN 为止，否则剩下的数据就再也没人通知你了。",
+        "ET 通常配非阻塞 fd 使用，减少了系统调用次数，但漏读一次就是连接卡死，属于典型的性能换复杂度。"
+      ]),
+      q("hs-linux-signal-safe", "advanced", false, "信号处理函数里为什么不能随便调用函数？正确写法是什么？", ["信号", "async-signal-safe", "优雅退出"], [
+        "信号是异步打断：可能在任意一条指令之间插进来，包括在 malloc 正在维护内部链表的时候。",
+        "如果此时处理函数里再调用 malloc 或 printf，就会重入同一把内部锁，导致死锁或数据结构损坏，所以只能调用异步信号安全的函数。",
+        "最稳的写法是处理函数里只做一件极简的事：给一个 volatile sig_atomic_t 标志位赋值，或者往管道写一个字节，真正的处理放回主循环。",
+        "更现代的做法是 signalfd 或自管道技巧，把信号转成一个可读的 fd，直接交给 epoll 统一处理，彻底避免异步上下文。",
+        "注册时优先用 sigaction 而不是 signal，因为 signal 的行为在不同平台上不一致，而 sigaction 能明确指定掩码和 SA_RESTART。"
+      ]),
+      q("hs-linux-oom", "advanced", false, "OOM Killer 是怎么选中进程的？怎么避免自己被杀？", ["OOM", "overcommit", "内存"], [
+        "Linux 默认允许 overcommit，也就是承诺的内存可以超过物理内存，因为大多数程序申请了并不会全用。",
+        "真正分配物理页是在第一次写入触发缺页时，所以 malloc 成功不代表内存真的到手了。",
+        "当物理内存和 swap 都不够时，内核会挑一个进程杀掉，评分主要看实际占用的内存量，占得多的最先被选中。",
+        "可以通过 /proc/pid/oom_score_adj 调低关键进程的分数，让它更不容易被选中，但这只是相对优先级，不是免死金牌。",
+        "被 OOM Killer 杀掉是 SIGKILL，不会产生 core、也没有任何清理机会，只能去 dmesg 里找 Out of memory 记录确认。"
+      ]),
+      q("hs-linux-sanitizer-choice", "intermediate", true, "ASan、TSan、valgrind 你会怎么选？", ["sanitizer", "valgrind", "工具选型"], [
+        "第一判据是能不能重新编译：能重编优先 Sanitizer，只有二进制时才用 valgrind。",
+        "ASan 查越界、use-after-free、double free 和泄漏，慢约 2 倍，适合开发和 CI 常开。",
+        "TSan 专查数据竞争，慢 5 到 15 倍，只适合单独一条 CI 流水线或压测环境，而且不能和 ASan 同时开。",
+        "valgrind 不用重编、还能查未初始化变量，但慢 10 到 50 倍，且查不到栈上越界。",
+        "工程上的组合是：日常构建挂 ASan+UBSan，CI 另跑一条 TSan，线上出事再用 valgrind 或 core 救场。"
       ])
     ],
     "恒生 / 并发与进程": [

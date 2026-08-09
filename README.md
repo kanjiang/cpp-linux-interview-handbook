@@ -18,7 +18,7 @@ cpp-linux-interview-handbook/
 
 页面能力包括：
 
-- `150+` 道题
+- `320+` 道题，`30+` 个专题
 - 浏览模式
 - 练习模式
 - 随机抽题
@@ -36,6 +36,12 @@ cpp-linux-interview-handbook/
 - `docs/index.html`
 - `docs/hundsun.html`（恒生面试准备）
 - `docs/cpp-modern-notes.html`（C++ 核心笔记：引用/转发/lambda 等）
+- `docs/cpp-value-semantics.html`（拷贝与移动、五法则、noexcept）
+- `docs/cpp-containers-notes.html`（容器与智能指针）
+- `docs/cpp-concurrency-notes.html`（并发与线程）
+- `docs/cpp-memory-perf-notes.html`（内存对齐、伪共享、内存池、STL 底层）
+- `docs/linux-sysprog-notes.html`（epoll / mmap / 信号 / core dump / OOM）
+- `docs/debug-tools-notes.html`（gdb / Sanitizer / valgrind / perf / strace）
 - `docs/hundsun-uf3-guide.html` / `docs/hundsun-uf3-memo.html`（UF3.0 文档）
 
 如果你更习惯本地 HTTP 服务，也可以在仓库根目录执行：

@@ -313,6 +313,69 @@ test("questions dataset includes noexcept knowledge entry", () => {
   assert.match(entry.answerPoints.join(" "), /vector|扩容/);
 });
 
+test("questions dataset includes debugging toolbox drill category", () => {
+  const drills = questions.filter((item) => item.category === "调试工具直讲");
+
+  assert.ok(drills.length >= 12);
+  assert.ok(drills.every((item) => item.id.indexOf("debug-tool-") === 0));
+  assert.ok(drills.every((item) => item.answerPoints.length >= 4));
+  assert.ok(drills.every((item) => (item.diagramSteps || []).length >= 3));
+  assert.ok(drills.every((item) => (item.pitfalls || []).length >= 2));
+  assert.ok(drills.filter((item) => Boolean(item.cppCode)).length >= 8);
+});
+
+test("debugging drills cover gdb, sanitizers, valgrind, perf and strace", () => {
+  const ids = [
+    "debug-tool-pick",
+    "debug-tool-gdb-breakpoint",
+    "debug-tool-gdb-watch",
+    "debug-tool-gdb-deadlock",
+    "debug-tool-asan",
+    "debug-tool-tsan",
+    "debug-tool-valgrind",
+    "debug-tool-perf-stat",
+    "debug-tool-flamegraph",
+    "debug-tool-strace",
+    "debug-tool-build-flags"
+  ];
+
+  ids.forEach((id) => {
+    const entry = questions.find((item) => item.id === id);
+    assert.ok(entry, id);
+    assert.equal(entry.category, "调试工具直讲");
+  });
+
+  const watch = questions.find((item) => item.id === "debug-tool-gdb-watch");
+  assert.match(watch.cppCode, /watch/);
+  assert.match(watch.answerPoints.join(" "), /Old value|观察点/);
+});
+
+test("Hundsun track covers new memory and system programming topics", () => {
+  const ids = [
+    "hs-cpp-alignment",
+    "hs-cpp-memory-pool",
+    "hs-cpp-stl-choice",
+    "hs-linux-core-missing",
+    "hs-linux-deadlock-live",
+    "hs-linux-epoll-lt-et",
+    "hs-linux-signal-safe",
+    "hs-linux-oom",
+    "hs-linux-sanitizer-choice"
+  ];
+
+  ids.forEach((id) => {
+    const entry = questions.find((item) => item.id === id);
+    assert.ok(entry, id);
+    assert.equal(entry.category.indexOf("恒生 /"), 0);
+    assert.ok(entry.answerPoints.length >= 4);
+  });
+});
+
+test("question ids stay unique across the whole dataset", () => {
+  const ids = questions.map((item) => item.id);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
 test("createPracticeState builds a filtered practice pool", () => {
   const state = createPracticeState(questions, {
     search: "",
