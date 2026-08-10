@@ -38,6 +38,7 @@
     <nav class="hundsun-panel guide-toc">
       <h2>目录</h2>
       <ol>
+        <li><a href="#what">0. 数据库到底是什么 · 四根支柱</a></li>
         <li><a href="#acid">1. 事务 · 要么全成，要么当作没发生过</a></li>
         <li><a href="#isolation">2. 隔离级别 · 并发下会读出什么怪东西</a></li>
         <li><a href="#mvcc">3. MVCC · 为什么读数据不用排队</a></li>
@@ -51,6 +52,126 @@
         <li><a href="#cheatsheet">11. 一页速记</a></li>
       </ol>
     </nav>
+
+    <article class="hundsun-panel guide-article" id="what">
+      <h2>0. 数据库到底是什么 · 四根支柱</h2>
+
+      <p>很多人对数据库的第一印象是「存数据 + 用 SQL 查数据」。这个理解方向对，但只说了一半 —— 它描述的是<strong>只有你一个人在用、而且机器永远不宕机</strong>时的情形。把这两个前提去掉，就多出另外两件必须做的事。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="数据库由存储、查询、并发、恢复四根支柱撑起，只有前两根的话那只是一个带索引的文件">
+          <text class="d-t is-sm is-dim" x="20" y="24">把数据库拆成四件必须做好的事</text>
+
+          <rect class="d-box is-gold" x="60" y="38" width="600" height="42" rx="8" />
+          <text class="d-t is-lg is-gold" x="360" y="65" text-anchor="middle">一个能用的数据库</text>
+
+          <rect class="d-box" x="30" y="96" width="150" height="110" rx="8" />
+          <text class="d-t is-lg is-accent" x="105" y="124" text-anchor="middle">存储</text>
+          <text class="d-t is-sm is-dim" x="105" y="152" text-anchor="middle">数据在磁盘上怎么组织</text>
+          <text class="d-t is-sm is-mono is-dim" x="105" y="178" text-anchor="middle">B+ 树 · 数据页</text>
+
+          <rect class="d-box" x="205" y="96" width="150" height="110" rx="8" />
+          <text class="d-t is-lg is-accent" x="280" y="124" text-anchor="middle">查询</text>
+          <text class="d-t is-sm is-dim" x="280" y="152" text-anchor="middle">怎么快速找到要的行</text>
+          <text class="d-t is-sm is-mono is-dim" x="280" y="178" text-anchor="middle">索引 · 执行计划</text>
+
+          <rect class="d-box is-ok" x="380" y="96" width="150" height="110" rx="8" />
+          <text class="d-t is-lg is-ok" x="455" y="124" text-anchor="middle">并发</text>
+          <text class="d-t is-sm is-dim" x="455" y="152" text-anchor="middle">很多人同时读写不打架</text>
+          <text class="d-t is-sm is-mono is-dim" x="455" y="178" text-anchor="middle">锁 · MVCC · 隔离级别</text>
+
+          <rect class="d-box is-ok" x="555" y="96" width="150" height="110" rx="8" />
+          <text class="d-t is-lg is-ok" x="630" y="124" text-anchor="middle">恢复</text>
+          <text class="d-t is-sm is-dim" x="630" y="152" text-anchor="middle">宕机后数据还在且一致</text>
+          <text class="d-t is-sm is-mono is-dim" x="630" y="178" text-anchor="middle">redo · undo · WAL</text>
+
+          <rect class="d-box is-muted" x="30" y="222" width="675" height="34" rx="6" />
+          <text class="d-t is-sm is-dim" x="367" y="244" text-anchor="middle">磁盘 · 内存 · 操作系统</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="286">只立起<tspan class="is-accent">左边两根</tspan>，那是一个带索引的文件；把<tspan class="is-ok">右边两根</tspan>也立起来，才叫数据库</text>
+        </svg>
+        <figcaption>判断标准可以这么记：你完全可以自己用 B+ 树写一个键值存储落到磁盘上，<strong>能存能查，但它不是数据库</strong>。让它成为数据库的是事务 —— 而事务要解决的，正是右边这两根柱子。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">被问到「你怎么理解数据库」时</span>
+        <p>先把<strong>存储、查询、并发、恢复</strong>这四个词摆出来，再挑一个展开讲，比一上来就钻进某个细节更容易让人觉得你有全局观。这四根柱子也正好是本页后面十节的骨架。</p>
+      </div>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>支柱</th><th>要解决的问题</th><th>本页对应章节</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>存储</strong></td><td>几千万行数据在磁盘上怎么摆，才能几次 IO 就找到</td><td>第 5、6 节：B+ 树、聚簇索引与回表</td></tr>
+            <tr><td><strong>查询</strong></td><td>同一个结果有很多种取法，怎么选最便宜的那种</td><td>第 7～9 节：最左前缀、索引失效、EXPLAIN</td></tr>
+            <tr><td><strong>并发</strong></td><td>很多人同时读写，怎么让他们互不干扰</td><td>第 2～4 节：隔离级别、MVCC、锁</td></tr>
+            <tr><td><strong>恢复</strong></td><td>随时可能断电，怎么保证提交了的不丢、没提交的不留痕</td><td>第 1、10 节：事务、redo / undo / binlog</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>0.1 SQL 是接口，不是查询本身</h3>
+      <p>还有一个常见的误解需要掰正：<strong>SQL 只是你和数据库之间的接口，它描述「要什么」，不描述「怎么做」</strong>。你写「给我账户 1001 这段时间的成交记录」，至于走哪个索引、要不要回表、怎么排序，全都是优化器替你决定的。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 365" role="img" aria-label="一条 SQL 先在 Server 层经过解析器优化器执行器，再交给可插拔的存储引擎处理索引、锁和日志，最后落到磁盘">
+          <text class="d-t is-sm is-dim" x="20" y="24">一条 SQL 从进来到落盘，经过哪几站</text>
+
+          <rect class="d-box is-muted" x="20" y="40" width="140" height="52" rx="8" />
+          <text class="d-t is-sm" x="90" y="62" text-anchor="middle">SQL 文本</text>
+          <text class="d-t is-sm is-dim" x="90" y="80" text-anchor="middle">你写的那句话</text>
+          <path class="d-line" d="M160 66 L188 66" marker-end="url(#ah)" />
+
+          <rect class="d-box" x="192" y="40" width="140" height="52" rx="8" />
+          <text class="d-t is-sm is-accent" x="262" y="62" text-anchor="middle">解析器</text>
+          <text class="d-t is-sm is-dim" x="262" y="80" text-anchor="middle">拆成语法树</text>
+          <path class="d-line" d="M332 66 L360 66" marker-end="url(#ah)" />
+
+          <rect class="d-box is-gold" x="364" y="40" width="140" height="52" rx="8" />
+          <text class="d-t is-sm is-gold" x="434" y="62" text-anchor="middle">优化器</text>
+          <text class="d-t is-sm is-dim" x="434" y="80" text-anchor="middle">选索引、定顺序</text>
+          <path class="d-line" d="M504 66 L532 66" marker-end="url(#ah)" />
+
+          <rect class="d-box" x="536" y="40" width="144" height="52" rx="8" />
+          <text class="d-t is-sm is-accent" x="608" y="62" text-anchor="middle">执行器</text>
+          <text class="d-t is-sm is-dim" x="608" y="80" text-anchor="middle">按计划调用引擎</text>
+
+          <text class="d-t is-sm is-gold" x="20" y="116">EXPLAIN 看到的就是优化器这一步的决定</text>
+          <path class="d-line" d="M608 96 L608 142" marker-end="url(#ah)" />
+
+          <rect class="d-box is-ghost" x="20" y="146" width="680" height="120" rx="10" />
+          <text class="d-t is-sm is-dim" x="36" y="170">存储引擎层（InnoDB，可插拔）</text>
+
+          <rect class="d-box is-ok" x="40" y="180" width="200" height="64" rx="8" />
+          <text class="d-t is-sm is-ok" x="140" y="204" text-anchor="middle">B+ 树索引</text>
+          <text class="d-t is-sm is-dim" x="140" y="228" text-anchor="middle">顺着树定位到数据页</text>
+
+          <rect class="d-box is-ok" x="260" y="180" width="200" height="64" rx="8" />
+          <text class="d-t is-sm is-ok" x="360" y="204" text-anchor="middle">行锁 / MVCC</text>
+          <text class="d-t is-sm is-dim" x="360" y="228" text-anchor="middle">能不能读、该读哪一版</text>
+
+          <rect class="d-box is-ok" x="480" y="180" width="200" height="64" rx="8" />
+          <text class="d-t is-sm is-ok" x="580" y="204" text-anchor="middle">redo / undo</text>
+          <text class="d-t is-sm is-dim" x="580" y="228" text-anchor="middle">崩了能恢复、能回滚</text>
+
+          <path class="d-line" d="M360 268 L360 282" marker-end="url(#ah)" />
+
+          <rect class="d-box is-muted" x="20" y="286" width="680" height="34" rx="6" />
+          <text class="d-t is-sm is-dim" x="360" y="308" text-anchor="middle">磁盘：真正的数据页和日志文件都在这里</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="342">换掉存储引擎，上面三站照跑；下面这层的 B+ 树、行锁、redo 全都要换</text>
+          <text class="d-t is-sm is-dim" x="20" y="362">这也是 binlog 属于 Server 层、而 redo 属于 InnoDB 的原因</text>
+        </svg>
+        <figcaption>这张图能一次解释三件事：<strong>为什么同一条 SQL 在数据量变化后会走完全不同的路</strong>（优化器是按统计信息估成本的）、<strong>为什么要看 EXPLAIN</strong>（那是唯一能看到优化器决定的窗口）、<strong>以及为什么 redo 和 binlog 分属两层</strong>（一个是引擎自己的，一个是全库通用的）。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">顺带一提</span>
+        <p>SQL 也不是数据库的必需品。Redis、RocksDB 都没有 SQL，但一样在做「存储 + 查询」，只是查询接口退化成了 <code>get</code> / <code>put</code>。<strong>SQL 是关系型数据库的选择，不是数据库的定义。</strong></p>
+      </div>
+    </article>
 
     <article class="hundsun-panel guide-article" id="acid">
       <h2>1. 事务 · 要么全成，要么当作没发生过</h2>

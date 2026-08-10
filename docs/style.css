@@ -937,11 +937,13 @@ a.secondary-button {
 }
 
 /* UF3 guide / memo pages */
+/* 条目文字里已经手写了章节号，再叠加列表自动编号会显示成「1. 1.」 */
 .guide-toc ol {
   margin: 12px 0 0;
-  padding-left: 22px;
+  padding-left: 2px;
   line-height: 1.8;
   color: var(--muted);
+  list-style: none;
 }
 
 .guide-toc a {
