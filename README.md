@@ -28,7 +28,7 @@ cpp-linux-interview-handbook/
 - 分类 / 难度 / 高频 / 公司轨道筛选
 - 展开全部 / 收起全部
 - 每道题附标准回答要点
-- 八篇图解笔记，共 `50` 张内联 SVG 示意图（内存布局、缓存行、epoll 内部结构、锁与死锁、火焰图、B+ 树与回表、inline 关键字与内联优化、std::move 到底搬了什么等）
+- 八篇图解笔记，共 `52` 张内联 SVG 示意图（进程地址空间与惰性映射、内存对齐、缓存行、epoll 内部结构、锁与死锁、火焰图、B+ 树与回表、inline 关键字与内联优化、std::move 到底搬了什么等）
 - 恒生经纪业务 C++ 岗准备页（技能清单 + JD checklist + 复习路径）
 
 ## 本地预览
@@ -41,7 +41,7 @@ cpp-linux-interview-handbook/
 - `docs/cpp-value-semantics.html`（拷贝与移动、五法则、noexcept）
 - `docs/cpp-containers-notes.html`（容器与智能指针）
 - `docs/cpp-concurrency-notes.html`（并发与线程）
-- `docs/cpp-memory-perf-notes.html`（内存对齐、伪共享、内存池、STL 底层）
+- `docs/cpp-memory-perf-notes.html`（进程地址空间、内存对齐、伪共享、内存池、STL 底层）
 - `docs/linux-sysprog-notes.html`（epoll / mmap / 信号 / core dump / OOM）
 - `docs/debug-tools-notes.html`（gdb / Sanitizer / valgrind / perf / strace）
 - `docs/db-notes.html`（事务 ACID / 隔离级别 / MVCC / 间隙锁 / B+ 树与回表 / 索引失效 / EXPLAIN）

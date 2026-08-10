@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>C++ 内存与性能形象笔记 · 对齐/伪共享/内存池/STL 底层</title>
-  <meta name="description" content="用停车位、白板争抢、抽屉零钱的比喻讲清内存对齐与 padding、cache 伪共享与 alignas(64)、内存池与 pmr，以及 STL 各容器的底层结构、复杂度与迭代器失效规则。" />
+  <title>C++ 内存与性能形象笔记 · 地址空间/对齐/伪共享/内存池/STL 底层</title>
+  <meta name="description" content="讲清进程地址空间里栈、堆、.data/.bss/.rodata 各在哪以及虚拟页的惰性映射，再用停车位、白板争抢、抽屉零钱的比喻讲内存对齐与 padding、cache 伪共享与 alignas(64)、内存池与 pmr，以及 STL 各容器的底层结构、复杂度与迭代器失效规则。" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 
@@ -23,7 +23,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Memory &amp; Performance</p>
         <h1>内存与性能 · 形象笔记</h1>
-        <p>内存对齐是「停车位要画线」，伪共享是「两个人抢同一块白板」，内存池是「自带一箱零钱不用跑银行」。再把 STL 各容器的底层结构、复杂度和迭代器失效规则一次讲透。</p>
+        <p>先弄清栈、堆、<code>.data</code>/<code>.bss</code>/<code>.rodata</code> 到底在哪块内存上；再看内存对齐「停车位要画线」、伪共享「两个人抢同一块白板」、内存池「自带一箱零钱不用跑银行」，最后把 STL 各容器的底层结构、复杂度和迭代器失效规则一次讲透。</p>
         <div class="hero-actions">
           <a class="primary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
           <a class="secondary-button" href="./debug-tools-notes.html">调试工具</a>
@@ -38,6 +38,7 @@
     <nav class="hundsun-panel guide-toc">
       <h2>目录</h2>
       <ol>
+        <li><a href="#address-space">0. 这些内存到底在哪 · 地址空间</a></li>
         <li><a href="#align">1. 内存对齐 · 停车位要画线</a></li>
         <li><a href="#false-sharing">2. Cache 伪共享 · 两个人抢同一块白板</a></li>
         <li><a href="#pool">3. 内存池 · 自带一箱零钱</a></li>
@@ -45,6 +46,232 @@
         <li><a href="#cheatsheet">5. 一页速记</a></li>
       </ol>
     </nav>
+
+    <article class="hundsun-panel guide-article" id="address-space">
+      <h2>0. 这些内存到底在哪 · 地址空间与物理内存</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>先破除一个常见误解：栈、堆、<code>.data</code>、<code>.bss</code>、<code>.rodata</code> <strong>全都在同一块物理内存（DRAM）上</strong>，没有「栈内存条」和「堆内存条」之分。这些名字描述的是<strong>虚拟地址空间里的分区</strong>，就像一栋楼的楼层规划表：几层放什么、谁能进、谁负责打扫，是规划图上写死的；至于某个房间现在有没有真的住人（有没有占物理内存），完全是另一回事。</p>
+      </div>
+
+      <p>所以区别只在四件事上：<strong>在地址空间的哪一段、页权限是什么、谁负责管理、初值从哪来</strong>。下面这张图就是那份楼层规划表。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 452" role="img" aria-label="x86-64 Linux 进程地址空间从高地址到低地址依次是内核空间、栈、mmap 区、堆、bss、data、rodata、text 和不可访问的第 0 页">
+          <text class="d-t is-sm is-dim" x="234" y="38" text-anchor="middle">区域</text>
+          <text class="d-t is-sm is-dim" x="424" y="38" text-anchor="middle">页权限</text>
+          <text class="d-t is-sm is-dim" x="585" y="38" text-anchor="middle">谁管 / 关键点</text>
+
+          <text class="d-t is-sm is-dim" x="16" y="68">高地址</text>
+          <text class="d-t is-sm is-dim" x="16" y="390">低地址</text>
+
+          <rect class="d-box is-ghost" x="84" y="46" width="300" height="30" rx="5" />
+          <rect class="d-box is-ghost" x="392" y="46" width="64" height="30" rx="5" />
+          <rect class="d-box is-ghost" x="464" y="46" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-dim" x="234" y="66" text-anchor="middle">内核空间</text>
+          <text class="d-t is-sm is-dim" x="424" y="66" text-anchor="middle">—</text>
+          <text class="d-t is-sm is-dim" x="585" y="66" text-anchor="middle">用户态完全碰不到</text>
+
+          <rect class="d-box is-ok" x="84" y="82" width="300" height="30" rx="5" />
+          <rect class="d-box is-ok" x="392" y="82" width="64" height="30" rx="5" />
+          <rect class="d-box is-ok" x="464" y="82" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-ok" x="234" y="102" text-anchor="middle">栈 stack　↓ 向下增长</text>
+          <text class="d-t is-sm is-mono is-dim" x="424" y="102" text-anchor="middle">rw-</text>
+          <text class="d-t is-sm is-dim" x="585" y="102" text-anchor="middle">编译器管，rsp 加减一条指令</text>
+
+          <rect class="d-box is-ghost" x="84" y="118" width="622" height="26" rx="5" />
+          <text class="d-t is-sm is-dim" x="395" y="136" text-anchor="middle">中间这一大片是空的 —— 堆和栈朝着对方生长</text>
+
+          <rect class="d-box is-muted" x="84" y="150" width="300" height="30" rx="5" />
+          <rect class="d-box is-muted" x="392" y="150" width="64" height="30" rx="5" />
+          <rect class="d-box is-muted" x="464" y="150" width="242" height="30" rx="5" />
+          <text class="d-t is-sm" x="234" y="170" text-anchor="middle">mmap 区</text>
+          <text class="d-t is-sm is-dim" x="424" y="170" text-anchor="middle">各异</text>
+          <text class="d-t is-sm is-dim" x="585" y="170" text-anchor="middle">共享库、文件映射、大块 malloc</text>
+
+          <rect class="d-box is-ok" x="84" y="186" width="300" height="30" rx="5" />
+          <rect class="d-box is-ok" x="392" y="186" width="64" height="30" rx="5" />
+          <rect class="d-box is-ok" x="464" y="186" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-ok" x="234" y="206" text-anchor="middle">堆 heap　↑ 向上增长</text>
+          <text class="d-t is-sm is-mono is-dim" x="424" y="206" text-anchor="middle">rw-</text>
+          <text class="d-t is-sm is-dim" x="585" y="206" text-anchor="middle">malloc 库管，向内核批发大块</text>
+
+          <rect class="d-box is-gold" x="84" y="222" width="300" height="30" rx="5" />
+          <rect class="d-box is-gold" x="392" y="222" width="64" height="30" rx="5" />
+          <rect class="d-box is-gold" x="464" y="222" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-mono is-gold" x="234" y="242" text-anchor="middle">.bss　未初始化 / 初值为 0</text>
+          <text class="d-t is-sm is-mono is-dim" x="424" y="242" text-anchor="middle">rw-</text>
+          <text class="d-t is-sm is-dim" x="585" y="242" text-anchor="middle">文件里不占空间，加载时清零</text>
+
+          <rect class="d-box is-gold" x="84" y="258" width="300" height="30" rx="5" />
+          <rect class="d-box is-gold" x="392" y="258" width="64" height="30" rx="5" />
+          <rect class="d-box is-gold" x="464" y="258" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-mono is-gold" x="234" y="278" text-anchor="middle">.data　有非零初值的全局</text>
+          <text class="d-t is-sm is-mono is-dim" x="424" y="278" text-anchor="middle">rw-</text>
+          <text class="d-t is-sm is-dim" x="585" y="278" text-anchor="middle">初值直接来自 ELF 文件</text>
+
+          <rect class="d-box is-gold" x="84" y="294" width="300" height="30" rx="5" />
+          <rect class="d-box is-gold" x="392" y="294" width="64" height="30" rx="5" />
+          <rect class="d-box is-gold" x="464" y="294" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-mono is-gold" x="234" y="314" text-anchor="middle">.rodata　字面量、全局 const</text>
+          <text class="d-t is-sm is-mono is-dim" x="424" y="314" text-anchor="middle">r--</text>
+          <text class="d-t is-sm is-dim" x="585" y="314" text-anchor="middle">写它当场 SIGSEGV</text>
+
+          <rect class="d-box is-gold" x="84" y="330" width="300" height="30" rx="5" />
+          <rect class="d-box is-gold" x="392" y="330" width="64" height="30" rx="5" />
+          <rect class="d-box is-gold" x="464" y="330" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-mono is-gold" x="234" y="350" text-anchor="middle">.text　机器指令</text>
+          <text class="d-t is-sm is-mono is-dim" x="424" y="350" text-anchor="middle">r-x</text>
+          <text class="d-t is-sm is-dim" x="585" y="350" text-anchor="middle">多进程共享同一份物理页</text>
+
+          <rect class="d-box is-warn" x="84" y="366" width="300" height="30" rx="5" />
+          <rect class="d-box is-warn" x="392" y="366" width="64" height="30" rx="5" />
+          <rect class="d-box is-warn" x="464" y="366" width="242" height="30" rx="5" />
+          <text class="d-t is-sm is-warn" x="234" y="386" text-anchor="middle">第 0 页 · 故意不映射</text>
+          <text class="d-t is-sm is-dim" x="424" y="386" text-anchor="middle">无</text>
+          <text class="d-t is-sm is-dim" x="585" y="386" text-anchor="middle">空指针解引用就死在这</text>
+
+          <text class="d-t is-sm is-gold" x="360" y="422" text-anchor="middle">金色四段来自 ELF 文件，大小编译期就定了；绿色两段是运行时才增长的</text>
+          <text class="d-t is-sm is-dim" x="360" y="444" text-anchor="middle">它们全都落在同一块 DRAM 上，分的是虚拟地址，不是物理介质</text>
+        </svg>
+        <figcaption>这张图里最该记住的是<strong>颜色分组</strong>：金色四段是<strong>链接期就排好、加载时由内核映射进来</strong>的，整个进程生命周期常驻；绿色两段是<strong>运行时才动</strong>的，中间留一大片空洞让它们各自有伸展余地。</figcaption>
+      </figure>
+
+      <h3>0.1 <code>.bss</code> 为什么在文件里不占空间</h3>
+
+      <p>四个带点的段都来自 ELF 文件，但 <code>.bss</code> 是唯一一个<strong>只记录大小、不存内容</strong>的：反正全是零，没必要在可执行文件里真存一堆零字节，加载时由内核清零就行。这带来一个很实用的判断依据：</p>
+
+      <pre class="answer-code-block"><code>int g_arr[1000000];           // 4MB，进 .bss —— 可执行文件不会变大
+int g_arr2[1000000] = {1};    // 4MB，进 .data —— 可执行文件真的胖 4MB
+
+// 验证一下
+$ size ./a.out
+   text    data     bss     dec     hex filename
+   1832     640 4000032 4002504  3d16c8 a.out
+//                ↑ bss 很大，但 ls -l 看文件体积并不大</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">一句话记忆</span>
+        <p>初值是不是全零，决定了这个全局变量进 <code>.bss</code> 还是 <code>.data</code>；<strong>进 <code>.bss</code> 不占文件体积，进 <code>.data</code> 占</strong>。运行时两者都是可读写的普通内存，没有区别。</p>
+      </div>
+
+      <h3>0.2 虚拟地址 ≠ 物理内存</h3>
+
+      <p>上面说的全是<strong>虚拟地址</strong>。每一页要通过页表映射到物理页帧才真正占用 DRAM，而这个映射是<strong>惰性</strong>的——用门牌号打比方：虚拟地址是市政规划好的门牌号，页表是户籍册，物理内存才是真盖起来的房子。发门牌号很便宜，盖房子才花钱。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 292" role="img" aria-label="malloc 拿到的虚拟页大多没有页表映射也不占物理内存，只有被写过的那一页才真正分配到物理页帧">
+          <text class="d-t is-sm is-gold" x="360" y="26" text-anchor="middle">malloc(1GB) 成功之后：门牌号发了一整条街，房子一间都没盖</text>
+
+          <text class="d-t is-sm is-dim" x="130" y="62" text-anchor="middle">虚拟地址空间</text>
+          <rect class="d-box is-ghost" x="40" y="76" width="180" height="26" rx="4" />
+          <text class="d-t is-sm is-dim" x="130" y="94" text-anchor="middle">未访问，无映射</text>
+          <rect class="d-box is-ghost" x="40" y="108" width="180" height="26" rx="4" />
+          <text class="d-t is-sm is-dim" x="130" y="126" text-anchor="middle">未访问，无映射</text>
+          <rect class="d-box is-ok" x="40" y="140" width="180" height="26" rx="4" />
+          <text class="d-t is-sm is-ok" x="130" y="158" text-anchor="middle">写过 → 有映射</text>
+          <rect class="d-box is-ghost" x="40" y="172" width="180" height="26" rx="4" />
+          <text class="d-t is-sm is-dim" x="130" y="190" text-anchor="middle">未访问，无映射</text>
+          <rect class="d-box is-ghost" x="40" y="204" width="180" height="26" rx="4" />
+          <text class="d-t is-sm is-dim" x="130" y="222" text-anchor="middle">未访问，无映射</text>
+
+          <line class="d-line is-ok" x1="220" y1="153" x2="278" y2="155" marker-end="url(#ah-ok)" />
+
+          <rect class="d-box" x="280" y="126" width="150" height="64" rx="8" />
+          <text class="d-t" x="355" y="152" text-anchor="middle">页表</text>
+          <text class="d-t is-sm is-dim" x="355" y="174" text-anchor="middle">只有写过的页才有条目</text>
+
+          <line class="d-line is-ok" x1="430" y1="155" x2="488" y2="153" marker-end="url(#ah-ok)" />
+
+          <text class="d-t is-sm is-dim" x="580" y="62" text-anchor="middle">物理内存（DRAM）</text>
+          <rect class="d-box is-ok" x="490" y="140" width="180" height="26" rx="4" />
+          <text class="d-t is-sm is-ok" x="580" y="158" text-anchor="middle">1 个真实物理页帧</text>
+          <text class="d-t is-sm is-dim" x="580" y="196" text-anchor="middle">其余的页：一个字节都没占</text>
+
+          <text class="d-t is-sm is-gold" x="360" y="258" text-anchor="middle">第一次写某一页 → 触发缺页中断 → 内核这时才分配物理页帧</text>
+          <text class="d-t is-sm is-dim" x="360" y="280" text-anchor="middle">所以 malloc 成功不等于占了内存，RSS 只统计真正落地的那部分</text>
+        </svg>
+        <figcaption>这解释了三个常被问到的现象：<code>malloc(1GB)</code> 成功但 <code>RSS</code> 不涨；同一个程序开 100 个进程，<code>.text</code> 和 <code>.rodata</code> <strong>只有一份物理页</strong>被大家共享；<code>.bss</code> 刚映射时所有页都指向内核里同一个只读<strong>零页</strong>，哪页被写了才 COW 复制出真页。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">反直觉但很重要</span>
+        <p>「一个变量在什么内存上」这个问题，精确的回答是：<strong>在它被真正读写之前，它可能不在任何物理内存上。</strong>这也是为什么压测时要看 <code>RSS</code> 而不是 <code>VSZ</code>——后者只是门牌号的数量。</p>
+      </div>
+
+      <h3>0.3 栈和堆的差别不在「内存」，在管理方式</h3>
+
+      <p>它们的物理介质完全一样，真正的差别是谁在管、以及管的成本：</p>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>栈</th>
+              <th>堆</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>谁管</td>
+              <td>编译器 + CPU</td>
+              <td>malloc 库（glibc / tcmalloc…）</td>
+            </tr>
+            <tr>
+              <td>分配动作</td>
+              <td><code>sub rsp, N</code> 一条指令</td>
+              <td>查空闲链表、切分、记账</td>
+            </tr>
+            <tr>
+              <td>回收</td>
+              <td>函数返回时 <code>rsp</code> 弹回，自动</td>
+              <td>必须显式 <code>free</code> / <code>delete</code></td>
+            </tr>
+            <tr>
+              <td>大小上限</td>
+              <td>默认 8MB（<code>ulimit -s</code>）</td>
+              <td>受物理内存 + overcommit 策略限制</td>
+            </tr>
+            <tr>
+              <td>向内核要内存</td>
+              <td>栈不够时内核自动扩 VMA</td>
+              <td>小块抬 <code>brk</code>，大块直接 <code>mmap</code></td>
+            </tr>
+            <tr>
+              <td>爆掉的表现</td>
+              <td>栈溢出（递归过深）→ <code>SIGSEGV</code></td>
+              <td><code>bad_alloc</code> 或被 OOM killer 杀掉</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>栈快不是因为「栈内存更快」，而是因为<strong>它的分配算法只有加减法</strong>，没有查找也没有记账。这也是为什么内存池的思路是「把堆变得像栈一样简单」——正是第 3 节要讲的事。</p>
+
+      <h3>0.4 怎么亲眼看到</h3>
+
+      <pre class="answer-code-block"><code>size ./a.out              # text / data / bss 各多大
+readelf -S ./a.out        # 所有 section 的大小和属性
+objdump -s -j .rodata a.out   # 直接把只读数据段的内容打出来
+
+cat /proc/&lt;pid&gt;/maps      # 运行中进程的真实地址空间，能看到 [heap] [stack] 和各 .so
+cat /proc/&lt;pid&gt;/status    # VmRSS 才是真正占用的物理内存，VmSize 只是虚拟地址
+ulimit -s                 # 栈的大小上限</code></pre>
+
+      <p><code>/proc/&lt;pid&gt;/maps</code> 最直观，一眼能看到每段的地址范围和 <code>r-xp</code> / <code>rw-p</code> 权限位，上面那张图的每一行都能在里面找到对应。</p>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试怎么答</span>
+        <p>先说「它们都在同一块物理内存上，分的是虚拟地址空间」，再按<strong>四段来自 ELF、两段运行时增长</strong>的思路铺开，最后补一句「而且虚拟页是惰性映射的，<code>malloc</code> 成功不等于真占了内存」。能主动区分 <code>VSZ</code> 和 <code>RSS</code>，基本就说明你不是只背了那张分层图。</p>
+      </div>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">一个容易被追问的术语</span>
+        <p>ELF 文件里叫 <strong>section</strong>（节，就是 <code>.text</code>/<code>.data</code> 这些名字），加载时按权限合并成 <strong>segment</strong>（段），<code>/proc/pid/maps</code> 里看到的是 <strong>VMA</strong>。平时说「<code>.data</code> 段」其实混用了 section 和 segment，日常交流没问题，但被追问时能分清是加分项。</p>
+      </div>
+    </article>
 
     <article class="hundsun-panel guide-article" id="align">
       <h2>1. 内存对齐 · 停车位要画线</h2>
