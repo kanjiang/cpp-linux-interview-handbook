@@ -40,12 +40,13 @@
       <ol>
         <li><a href="#four">1. 四个函数：一个比喻讲清</a></li>
         <li><a href="#when">2. 签名与触发时机</a></li>
-        <li><a href="#impl">3. 完整实现与三个必记细节</a></li>
-        <li><a href="#rules">4. 三法则 / 五法则 / 零法则</a></li>
-        <li><a href="#trap">5. 最大的坑：写了析构，移动就没了</a></li>
-        <li><a href="#noexcept">6. <code>noexcept</code>：为什么移动必须标</a></li>
-        <li><a href="#delete">7. 什么时候该禁用拷贝</a></li>
-        <li><a href="#cheatsheet">8. 决策速查表与背诵版</a></li>
+        <li><a href="#move-itself">3. <code>std::move</code> 到底搬了什么</a></li>
+        <li><a href="#impl">4. 完整实现与三个必记细节</a></li>
+        <li><a href="#rules">5. 三法则 / 五法则 / 零法则</a></li>
+        <li><a href="#trap">6. 最大的坑：写了析构，移动就没了</a></li>
+        <li><a href="#noexcept">7. <code>noexcept</code>：为什么移动必须标</a></li>
+        <li><a href="#delete">8. 什么时候该禁用拷贝</a></li>
+        <li><a href="#cheatsheet">9. 决策速查表与背诵版</a></li>
       </ol>
     </nav>
 
@@ -159,8 +160,123 @@ d = Buffer(300);          // 移动赋值（临时量是右值）</code></pre>
       </div>
     </article>
 
+    <article class="hundsun-panel guide-article" id="move-itself">
+      <h2>3. <code>std::move</code> 到底搬了什么（答案：什么也没搬）</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>接着上面「过户」的比喻：<code>std::move</code> <strong>不是搬家公司</strong>，它只是在合同上盖了个「此房可过户」的章。真正跑腿的是那个类型自己的<strong>移动构造 / 移动赋值</strong>——房产证上改名、把源对象的门牌号抹掉，都写在它们的函数体里。</p>
+      </div>
+
+      <p>标准库里 <code>std::move</code> 的实现就这么一行，它是个<strong>类型转换</strong>，编译出来一条指令都不产生：</p>
+
+      <pre class="answer-code-block"><code>template &lt;class T&gt;
+constexpr std::remove_reference_t&lt;T&gt;&amp;&amp; move(T&amp;&amp; t) noexcept {
+    return static_cast&lt;std::remove_reference_t&lt;T&gt;&amp;&amp;&gt;(t);
+}</code></pre>
+
+      <p>所以有人说它更该叫 <code>rvalue_cast</code>，<code>move</code> 这个名字才是一切误解的源头。下面这张图把「谁在什么时候干了什么」拆开：</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 336" role="img" aria-label="std::move 只在编译期做一次类型转换，重载决议据此挑中移动赋值，真正搬指针的代码在运行期的移动赋值函数体里">
+          <rect class="d-box" x="110" y="26" width="500" height="40" rx="8" />
+          <text class="d-t is-mono" x="360" y="52" text-anchor="middle">你写下 b = std::move(a);</text>
+
+          <line class="d-line" x1="360" y1="66" x2="360" y2="90" marker-end="url(#ah)" />
+
+          <rect class="d-box is-gold" x="110" y="92" width="500" height="56" rx="8" />
+          <text class="d-t is-sm is-gold" x="360" y="115" text-anchor="middle">编译期 ①：std::move 做了唯一的一件事 —— 一次 static_cast</text>
+          <text class="d-t is-sm is-dim" x="360" y="136" text-anchor="middle">把表达式 a 的值类别变成右值，不产生任何机器指令</text>
+
+          <line class="d-line" x1="360" y1="148" x2="360" y2="172" marker-end="url(#ah)" />
+
+          <rect class="d-box" x="110" y="174" width="500" height="56" rx="8" />
+          <text class="d-t is-sm is-accent" x="360" y="197" text-anchor="middle">编译期 ②：重载决议</text>
+          <text class="d-t is-sm is-dim" x="360" y="218" text-anchor="middle">看到右值，挑中 operator=(Buffer&amp;&amp;) 而不是 (const Buffer&amp;)</text>
+
+          <line class="d-line is-ok" x1="360" y1="230" x2="360" y2="254" marker-end="url(#ah-ok)" />
+
+          <rect class="d-box is-ok" x="110" y="256" width="500" height="56" rx="8" />
+          <text class="d-t is-sm is-ok" x="360" y="279" text-anchor="middle">运行期 ③：真正搬东西的代码在这里</text>
+          <text class="d-t is-sm is-mono is-dim" x="360" y="300" text-anchor="middle">data_ = o.data_;　o.data_ = nullptr;</text>
+
+          <text class="d-t is-sm is-gold" x="360" y="330" text-anchor="middle">搬移发生在第 ③ 步，而 std::move 只参与了第 ① 步</text>
+        </svg>
+        <figcaption>把这条链路记住，就不会再问「<code>std::move</code> 之后数据去哪了」：它只负责<strong>把表达式标记成右值</strong>，让编译器有理由挑中移动版本的重载；<strong>搬指针、置空源对象的代码，是你自己写在移动构造 / 移动赋值里的</strong>。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">容易说错的一句话</span>
+        <p>「<code>std::move</code> 把这个<strong>变量</strong>变成了右值」——不准确。它产生的是一个<strong>值类别为右值的表达式</strong>，变量本身纹丝不动。下一行你再写这个变量名，它照样是左值。这不是抠字眼，它正好解释了下面这个人人都踩过的坑。</p>
+      </div>
+
+      <pre class="answer-code-block"><code>void g(Buffer&amp;&amp; x) {
+    sink(x);              // ✗ 走的是【拷贝】！x 有名字，表达式 x 是左值
+    sink(std::move(x));   // ✓ 这样才是右值，走移动
+}</code></pre>
+
+      <p><code>x</code> 的<strong>类型</strong>是右值引用，但<strong>表达式</strong> <code>x</code> 是左值——凡是有名字、能取地址的都是左值。如果 <code>std::move</code> 改的是变量属性，这里就不必再转一次了。转发场景里把 <code>std::forward</code> 漏掉，移动悄悄退化成拷贝，根源也在这。</p>
+
+      <h3>3.1 盖了章，也不一定真过户</h3>
+
+      <p><code>std::move</code> 是一句<strong>许可</strong>，不是<strong>命令</strong>。它只表达「这个对象我不打算再用了，你可以搬」，至于最后搬没搬，取决于重载决议挑中了谁：</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 268" role="img" aria-label="同样写 std::move，类型有移动构造时才真的搬指针，没有移动构造或对象是 const 时都会静默退化成拷贝">
+          <rect class="d-box" x="180" y="20" width="360" height="38" rx="8" />
+          <text class="d-t is-sm" x="360" y="44" text-anchor="middle">同样一句 std::move(a)，结果可能完全不同</text>
+
+          <line class="d-line is-ok" x1="330" y1="58" x2="125" y2="82" marker-end="url(#ah-ok)" />
+          <line class="d-line is-warn" x1="360" y1="58" x2="360" y2="82" marker-end="url(#ah-warn)" />
+          <line class="d-line is-warn" x1="390" y1="58" x2="595" y2="82" marker-end="url(#ah-warn)" />
+
+          <rect class="d-box is-ok" x="20" y="84" width="210" height="46" rx="6" />
+          <text class="d-t is-sm is-ok" x="125" y="105" text-anchor="middle">类型有移动构造</text>
+          <text class="d-t is-sm is-dim" x="125" y="123" text-anchor="middle">而且源不是 const</text>
+
+          <rect class="d-box is-warn" x="255" y="84" width="210" height="46" rx="6" />
+          <text class="d-t is-sm is-warn" x="360" y="105" text-anchor="middle">类型没有移动构造</text>
+          <text class="d-t is-sm is-dim" x="360" y="123" text-anchor="middle">比如写了析构却没补移动</text>
+
+          <rect class="d-box is-warn" x="490" y="84" width="210" height="46" rx="6" />
+          <text class="d-t is-sm is-warn" x="595" y="105" text-anchor="middle">源对象是 const</text>
+          <text class="d-t is-sm is-mono is-dim" x="595" y="123" text-anchor="middle">const Buffer a;</text>
+
+          <line class="d-line is-ok" x1="125" y1="130" x2="125" y2="154" marker-end="url(#ah-ok)" />
+          <line class="d-line is-warn" x1="360" y1="130" x2="360" y2="154" marker-end="url(#ah-warn)" />
+          <line class="d-line is-warn" x1="595" y1="130" x2="595" y2="154" marker-end="url(#ah-warn)" />
+
+          <rect class="d-box is-ok" x="20" y="156" width="210" height="46" rx="6" />
+          <text class="d-t is-sm is-ok" x="125" y="177" text-anchor="middle">真的搬指针</text>
+          <text class="d-t is-sm is-dim" x="125" y="195" text-anchor="middle">源对象被置空</text>
+
+          <rect class="d-box is-warn" x="255" y="156" width="210" height="46" rx="6" />
+          <text class="d-t is-sm is-warn" x="360" y="177" text-anchor="middle">静默退化成拷贝</text>
+          <text class="d-t is-sm is-dim" x="360" y="195" text-anchor="middle">编译器一声不吭</text>
+
+          <rect class="d-box is-warn" x="490" y="156" width="210" height="46" rx="6" />
+          <text class="d-t is-sm is-mono is-warn" x="595" y="177" text-anchor="middle">const Buffer&amp;&amp;</text>
+          <text class="d-t is-sm is-dim" x="595" y="195" text-anchor="middle">只能匹配到 const&amp;，还是拷贝</text>
+
+          <text class="d-t is-sm is-gold" x="360" y="230" text-anchor="middle">std::move 说的是「我不再用它了，你可以搬」</text>
+          <text class="d-t is-sm is-dim" x="360" y="252" text-anchor="middle">而不是「给我搬」——真搬不搬，由挑中哪个重载决定</text>
+        </svg>
+        <figcaption>中间和右边这两种退化<strong>都不会有任何编译错误或警告</strong>，代码照常跑、结果也对，只是性能悄悄没了。中间那种正是下一节要讲的坑，右边那种提醒你：<strong>不要对 <code>const</code> 对象用 <code>std::move</code></strong>。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">搬完之后源对象什么状态</span>
+        <p>标准的说法是<strong>「有效但未指定」</strong>（valid but unspecified）：它仍是一个完好的对象，析构一定安全，也可以给它赋新值；但你<strong>不能假设它里面还剩什么</strong>。<code>std::string</code>、<code>std::vector</code> 被移动后通常变空，那是实现细节，不是标准保证。所以移动过的对象，要么重新赋值，要么就别再读它。</p>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试怎么答</span>
+        <p>一句话开场：「<code>std::move</code> 不移动任何东西，它是个 <code>static_cast</code>，只把表达式转成右值；真正的搬移发生在该类型的移动构造或移动赋值里。」然后补一句「所以它是许可不是命令，类型没有移动操作时会静默退化成拷贝」，这题基本就满分了。</p>
+      </div>
+    </article>
+
     <article class="hundsun-panel guide-article" id="impl">
-      <h2>3. 完整实现与三个必记细节</h2>
+      <h2>4. 完整实现与三个必记细节</h2>
       <pre class="answer-code-block"><code>class Buffer {
 public:
     explicit Buffer(size_t n)
@@ -224,7 +340,7 @@ a.size();           // ✓ 允许调用，但值是"未指定"的，不要假设
     </article>
 
     <article class="hundsun-panel guide-article" id="rules">
-      <h2>4. 三法则 / 五法则 / 零法则</h2>
+      <h2>5. 三法则 / 五法则 / 零法则</h2>
 
       <h3>三法则（C++98）</h3>
       <p>如果你需要自己写<strong>析构函数、拷贝构造、拷贝赋值</strong>中的任意一个，那几乎肯定三个都需要。</p>
@@ -277,7 +393,7 @@ private:
     </article>
 
     <article class="hundsun-panel guide-article" id="trap">
-      <h2>5. 最大的坑：写了析构函数，移动就悄悄没了</h2>
+      <h2>6. 最大的坑：写了析构函数，移动就悄悄没了</h2>
       <div class="guide-table-wrap">
         <table class="guide-table">
           <thead>
@@ -332,7 +448,7 @@ public:
     </article>
 
     <article class="hundsun-panel guide-article" id="noexcept">
-      <h2>6. <code>noexcept</code>：为什么移动操作必须标</h2>
+      <h2>7. <code>noexcept</code>：为什么移动操作必须标</h2>
       <p><code>noexcept</code> 是一个<strong>承诺</strong>：这个函数绝不抛异常。违背承诺时程序不会栈展开，而是直接 <code>std::terminate()</code>。它的价值在于：<strong>编译器和标准库会依据这个承诺选择更快的代码路径</strong>。</p>
 
       <h3>核心场景：<code>std::vector</code> 扩容</h3>
@@ -441,7 +557,7 @@ v.push_back(...);                // 扩容时全程【拷贝】，性能可能�
     </article>
 
     <article class="hundsun-panel guide-article" id="delete">
-      <h2>7. 什么时候该禁用拷贝</h2>
+      <h2>8. 什么时候该禁用拷贝</h2>
       <pre class="answer-code-block"><code>class Foo {
 public:
     Foo(const Foo&amp;) = delete;
@@ -515,7 +631,7 @@ public:
     </article>
 
     <article class="hundsun-panel guide-article" id="cheatsheet">
-      <h2>8. 决策速查表与背诵版</h2>
+      <h2>9. 决策速查表与背诵版</h2>
       <div class="guide-table-wrap">
         <table class="guide-table">
           <thead>
