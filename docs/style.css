@@ -55,7 +55,7 @@ button {
 }
 
 .app-shell {
-  width: min(1240px, calc(100% - 32px));
+  width: min(1720px, calc(100% - 32px));
   margin: 0 auto;
   padding: 22px 0 46px;
 }
@@ -505,6 +505,13 @@ a.secondary-button {
   align-items: start;
 }
 
+/* 宽屏上两列会把每张卡撑得太宽，多排一列更好读。 */
+@media (min-width: 1500px) {
+  .question-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .question-card {
   border-radius: var(--radius-lg);
   border: 1px solid rgba(79, 140, 255, 0.12);
@@ -952,6 +959,24 @@ a.secondary-button {
   list-style: none;
 }
 
+/* 目录条目都很短，宽屏上排成一列会拖得很长。 */
+@media (min-width: 1200px) {
+  .guide-toc ol {
+    columns: 2;
+    column-gap: 32px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .guide-toc ol {
+    columns: 3;
+  }
+}
+
+.guide-toc li {
+  break-inside: avoid;
+}
+
 .guide-toc a {
   color: var(--accent-strong);
   text-decoration: none;
@@ -979,6 +1004,15 @@ a.secondary-button {
 .guide-article li {
   color: var(--muted);
   line-height: 1.65;
+}
+
+/* 页面在大屏上会变宽，图示、表格和代码块吃满宽度是好事，
+   但正文再跟着变宽行就太长了，所以只把正文的行长钉住。 */
+.guide-article > p,
+.guide-article > ul,
+.guide-article > ol,
+.guide-callout > p {
+  max-width: 1190px;
 }
 
 .guide-article ul,
