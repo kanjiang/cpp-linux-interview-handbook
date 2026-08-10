@@ -505,6 +505,13 @@ a.secondary-button {
   align-items: start;
 }
 
+/* 折叠时靠多列提高浏览密度，展开后独占整行：
+   三列布局下单列只有 380~464px，放不下一行代码，读起来要横向拖。
+   注意网格项是外层的 .question-card，不是里面的 details。 */
+.question-grid .question-card:has(details[open]) {
+  grid-column: 1 / -1;
+}
+
 /* 宽屏上两列会把每张卡撑得太宽，多排一列更好读。 */
 @media (min-width: 1500px) {
   .question-grid {

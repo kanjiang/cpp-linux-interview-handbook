@@ -411,6 +411,117 @@ test("C++ basics questions carry the same depth as the walkthrough categories", 
   assert.ok(basics.every((item) => (item.complexity || []).length >= 2));
 });
 
+test("OOP and memory questions match the C++ basics depth", () => {
+  ["面向对象", "内存管理"].forEach((category) => {
+    const group = questions.filter((item) => item.category === category);
+
+    assert.ok(group.length >= 11, category + " lost questions");
+    group.forEach((item) => {
+      assert.ok(item.answerPoints.length >= 5, item.id + " answerPoints");
+      assert.ok((item.diagramSteps || []).length >= 5, item.id + " diagramSteps");
+      assert.ok((item.pitfalls || []).length >= 4, item.id + " pitfalls");
+      assert.ok(Boolean(item.cppCode), item.id + " cppCode");
+      assert.ok((item.complexity || []).length >= 2, item.id + " complexity");
+    });
+  });
+});
+
+test("answer prose carries no raw HTML tags, since it is escaped on render", () => {
+  const fields = ["answerPoints", "diagramSteps", "pitfalls", "complexity"];
+
+  questions.forEach((item) => {
+    fields.forEach((field) => {
+      (item[field] || []).forEach((line) => {
+        // 只匹配闭合标签和 <br>，避免误伤 make_shared<B>() 这类模板实参。
+        assert.doesNotMatch(
+          line,
+          /<\/(b|i|strong|em|code|span|p)>|<br\s*\/?>/,
+          item.id + "." + field + " would render the tag literally: " + line
+        );
+      });
+    });
+  });
+});
+
+// 展开的卡片会占满整行，所以 71 列不是硬性的布局上限，而是一条排版预算：
+// 手机宽度下无论如何都要横向滚动，这条线只是防止示例代码继续变宽。
+test("code samples stay inside the question card width", () => {
+  const wide = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\uff00-\uff60]/;
+  const columns = (line) =>
+    [...line].reduce((sum, ch) => sum + (wide.test(ch) ? 2 : 1), 0);
+
+  ["面向对象", "内存管理", "C++ 基础", "STL"].forEach((category) => {
+    questions
+      .filter((item) => item.category === category && item.cppCode)
+      .forEach((item) => {
+        item.cppCode.split("\n").forEach((line, index) => {
+          assert.ok(
+            columns(line) <= 71,
+            item.id + " line " + (index + 1) + " is " + columns(line) + " columns: " + line
+          );
+        });
+      });
+  });
+});
+
+test("the sort question answers the hand-written question and the comparator contract", () => {
+  const entry = questions.find((item) => item.id === "stl-sort");
+  const prose = entry.answerPoints
+    .concat(entry.diagramSteps, entry.pitfalls, entry.complexity)
+    .join(" ");
+
+  assert.equal(entry.category, "STL");
+  assert.ok(entry.answerPoints.length >= 5);
+  assert.ok(entry.diagramSteps.length >= 5);
+  assert.ok(entry.pitfalls.length >= 4);
+  // 三段算法必须都点到名，否则 introsort 讲不完整。
+  assert.match(prose, /introsort/i);
+  assert.match(prose, /快速排序|快排/);
+  assert.match(prose, /堆排序/);
+  assert.match(prose, /插入排序/);
+  // 契约是这题真正的考点：严格弱序、不稳定、以及别整体排序。
+  assert.match(prose, /严格.{0,2}弱序/);
+  assert.match(prose, /未定义行为/);
+  assert.match(prose, /不稳定/);
+  assert.match(prose, /stable_sort/);
+  assert.match(prose, /nth_element/);
+  // 冒泡的结论要明确给出，这是提问的原点。
+  assert.match(prose, /冒泡/);
+  assert.match(entry.cppCode, /std::tie/);
+});
+
+test("the RAII question explains stack unwinding and the lock_guard naming trap", () => {
+  const entry = questions.find((item) => item.id === "memory-raii");
+  const prose = entry.answerPoints.concat(entry.diagramSteps, entry.pitfalls).join(" ");
+
+  assert.equal(entry.category, "内存管理");
+  assert.match(prose, /栈展开/);
+  assert.match(prose, /noexcept/);
+  // 少写变量名会让 lock_guard 变成立即析构的临时对象。
+  assert.match(prose, /临时对象/);
+  assert.match(entry.cppCode, /lock_guard/);
+});
+
+test("the new-versus-malloc question splits new into allocation and construction", () => {
+  const entry = questions.find((item) => item.id === "memory-new-vs-malloc");
+  const prose = entry.answerPoints.concat(entry.diagramSteps).join(" ");
+
+  assert.match(prose, /operator new/);
+  assert.match(prose, /placement new/);
+  assert.match(prose, /bad_alloc/);
+  assert.match(entry.cppCode, /new \(buf\)/);
+});
+
+test("the shared_ptr thread-safety question separates all three layers", () => {
+  const entry = questions.find((item) => item.id === "memory-shared-threadsafe");
+  const prose = entry.answerPoints.concat(entry.diagramSteps, entry.pitfalls).join(" ");
+
+  // 控制块安全、对象不安全、shared_ptr 变量本身也不安全。
+  assert.match(prose, /控制块/);
+  assert.match(prose, /数据竞争/);
+  assert.match(entry.cppCode, /atomic<std::shared_ptr/);
+});
+
 test("the inline question separates the keyword from the compiler optimisation", () => {
   const entry = questions.find((item) => item.id === "cpp-inline");
   const prose = entry.answerPoints.concat(entry.diagramSteps, entry.pitfalls).join(" ");

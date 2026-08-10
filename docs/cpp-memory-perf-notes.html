@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>C++ 内存与性能形象笔记 · 地址空间/对齐/伪共享/内存池/STL 底层</title>
-  <meta name="description" content="讲清进程地址空间里栈、堆、.data/.bss/.rodata 各在哪以及虚拟页的惰性映射，再用停车位、白板争抢、抽屉零钱的比喻讲内存对齐与 padding、cache 伪共享与 alignas(64)、内存池与 pmr，以及 STL 各容器的底层结构、复杂度与迭代器失效规则。" />
+  <meta name="description" content="讲清进程地址空间里栈、堆、.data/.bss/.rodata 各在哪、虚拟页的惰性映射，以及 SRAM/DRAM/DDR 与 L1/L2/L3 三级缓存的层级关系与延迟阶梯；再用停车位、白板争抢、抽屉零钱的比喻讲内存对齐与 padding、cache 伪共享与 alignas(64)、内存池与 pmr，以及 STL 各容器的底层结构、复杂度与迭代器失效规则。" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 
@@ -23,7 +23,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Memory &amp; Performance</p>
         <h1>内存与性能 · 形象笔记</h1>
-        <p>先弄清栈、堆、<code>.data</code>/<code>.bss</code>/<code>.rodata</code> 到底在哪块内存上；再看内存对齐「停车位要画线」、伪共享「两个人抢同一块白板」、内存池「自带一箱零钱不用跑银行」，最后把 STL 各容器的底层结构、复杂度和迭代器失效规则一次讲透。</p>
+        <p>先弄清栈、堆、<code>.data</code>/<code>.bss</code>/<code>.rodata</code> 到底在哪块内存上，以及 SRAM、DRAM、DDR 和 L1/L2/L3 的层级关系；再看内存对齐「停车位要画线」、伪共享「两个人抢同一块白板」、内存池「自带一箱零钱不用跑银行」，最后把 STL 各容器的底层结构、复杂度和迭代器失效规则一次讲透。</p>
         <div class="hero-actions">
           <a class="primary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
           <a class="secondary-button" href="./debug-tools-notes.html">调试工具</a>
@@ -38,7 +38,7 @@
     <nav class="hundsun-panel guide-toc">
       <h2>目录</h2>
       <ol>
-        <li><a href="#address-space">0. 这些内存到底在哪 · 地址空间</a></li>
+        <li><a href="#address-space">0. 这些内存到底在哪 · 地址空间与存储层级</a></li>
         <li><a href="#align">1. 内存对齐 · 停车位要画线</a></li>
         <li><a href="#false-sharing">2. Cache 伪共享 · 两个人抢同一块白板</a></li>
         <li><a href="#pool">3. 内存池 · 自带一箱零钱</a></li>
@@ -48,7 +48,7 @@
     </nav>
 
     <article class="hundsun-panel guide-article" id="address-space">
-      <h2>0. 这些内存到底在哪 · 地址空间与物理内存</h2>
+      <h2>0. 这些内存到底在哪 · 地址空间与存储层级</h2>
 
       <div class="guide-callout is-metaphor">
         <span class="callout-label">形象比喻</span>
@@ -262,14 +262,185 @@ ulimit -s                 # 栈的大小上限</code></pre>
 
       <p><code>/proc/&lt;pid&gt;/maps</code> 最直观，一眼能看到每段的地址范围和 <code>r-xp</code> / <code>rw-p</code> 权限位，上面那张图的每一行都能在里面找到对应。</p>
 
-      <div class="guide-callout is-key">
-        <span class="callout-label">面试怎么答</span>
-        <p>先说「它们都在同一块物理内存上，分的是虚拟地址空间」，再按<strong>四段来自 ELF、两段运行时增长</strong>的思路铺开，最后补一句「而且虚拟页是惰性映射的，<code>malloc</code> 成功不等于真占了内存」。能主动区分 <code>VSZ</code> 和 <code>RSS</code>，基本就说明你不是只背了那张分层图。</p>
-      </div>
-
       <div class="guide-callout is-warn">
         <span class="callout-label">一个容易被追问的术语</span>
         <p>ELF 文件里叫 <strong>section</strong>（节，就是 <code>.text</code>/<code>.data</code> 这些名字），加载时按权限合并成 <strong>segment</strong>（段），<code>/proc/pid/maps</code> 里看到的是 <strong>VMA</strong>。平时说「<code>.data</code> 段」其实混用了 section 和 segment，日常交流没问题，但被追问时能分清是加分项。</p>
+      </div>
+
+      <h3>0.5 再往下一层：Cache 和内存条根本不是同一种芯片</h3>
+
+      <p>上面说「物理内存」时一直笼统地叫 DRAM。真正跑起来时，CPU 并不直接跟 DRAM 打交道，中间还隔着三级 Cache——而<strong>Cache 和内存条用的是两种完全不同的芯片</strong>，这是很多人混淆的起点。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 306" role="img" aria-label="SRAM 用六个晶体管组成触发器不需要刷新用于 CPU 内的三级缓存，DRAM 用一个晶体管加一个电容需要定时刷新用于内存条，DDR 只是 DRAM 的传输协议">
+          <rect class="d-box is-ok" x="20" y="40" width="320" height="200" rx="12" />
+          <text class="d-t is-lg is-ok" x="180" y="68" text-anchor="middle">SRAM · 静态内存</text>
+          <text class="d-t is-sm is-dim" x="180" y="90" text-anchor="middle">6 个晶体管组成一个触发器</text>
+          <rect class="d-box is-muted" x="44" y="104" width="272" height="30" rx="5" />
+          <text class="d-t is-sm" x="180" y="124" text-anchor="middle">没有电容，不需要刷新</text>
+          <rect class="d-box is-muted" x="44" y="142" width="272" height="30" rx="5" />
+          <text class="d-t is-sm" x="180" y="162" text-anchor="middle">极快、极贵、占芯片面积大</text>
+          <rect class="d-box is-muted" x="44" y="180" width="272" height="30" rx="5" />
+          <text class="d-t is-sm is-ok" x="180" y="200" text-anchor="middle">用在 L1 / L2 / L3，做在 CPU 片内</text>
+          <text class="d-t is-sm is-dim" x="180" y="228" text-anchor="middle">断电照样丢数据，只是不用刷新</text>
+
+          <rect class="d-box is-gold" x="380" y="40" width="320" height="200" rx="12" />
+          <text class="d-t is-lg is-gold" x="540" y="68" text-anchor="middle">DRAM · 动态内存</text>
+          <text class="d-t is-sm is-dim" x="540" y="90" text-anchor="middle">1 个晶体管 + 1 个电容</text>
+          <rect class="d-box is-muted" x="404" y="104" width="272" height="30" rx="5" />
+          <text class="d-t is-sm" x="540" y="124" text-anchor="middle">电容会漏电，必须定时刷新</text>
+          <rect class="d-box is-muted" x="404" y="142" width="272" height="30" rx="5" />
+          <text class="d-t is-sm" x="540" y="162" text-anchor="middle">慢一档、便宜、密度高</text>
+          <rect class="d-box is-muted" x="404" y="180" width="272" height="30" rx="5" />
+          <text class="d-t is-sm is-gold" x="540" y="200" text-anchor="middle">用在内存条，插在主板插槽上</text>
+          <text class="d-t is-sm is-dim" x="540" y="228" text-anchor="middle">断电同样丢数据</text>
+
+          <rect class="d-box" x="20" y="252" width="680" height="44" rx="8" />
+          <text class="d-t is-sm is-accent" x="360" y="272" text-anchor="middle">DDR4 / DDR5 不是第三种存储介质</text>
+          <text class="d-t is-sm is-dim" x="360" y="290" text-anchor="middle">而是 DRAM 芯片对外的传输协议：时钟上升沿和下降沿各传一次数据，带宽翻倍</text>
+        </svg>
+        <figcaption>三个名字的关系是<strong>包含</strong>而不是并列：内存条上焊的是 DRAM 芯片，DDR5 是这些芯片跟内存控制器沟通时遵守的协议。所以「DDR5 是一种新型 DRAM」这个说法不准确——底层还是 DRAM，升级的是总线频率、引脚设计和纠错机制。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">一个过时的说法</span>
+        <p>老资料常说「CPU 向<strong>主板上的</strong>内存控制器发起请求」，这是 2008 年以前北桥芯片时代的架构。现代 CPU 的<strong>内存控制器（IMC）是集成在 CPU 片内</strong>的（Intel 从 Nehalem、AMD 从 Athlon 64 起），内存条直连 CPU。这也是多路服务器上 NUMA 的由来：访问挂在别的 CPU 上的内存要绕一趟，明显更慢。</p>
+      </div>
+
+      <h3>0.6 从 L1 到硬盘：一张延迟阶梯</h3>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 330" role="img" aria-label="从 L1 缓存到机械硬盘的容量与延迟对照表，并把延迟按比例换算成人类能感知的时间">
+          <text class="d-t is-sm is-dim" x="90" y="34" text-anchor="middle">层级</text>
+          <text class="d-t is-sm is-dim" x="223" y="34" text-anchor="middle">典型容量</text>
+          <text class="d-t is-sm is-dim" x="341" y="34" text-anchor="middle">延迟</text>
+          <text class="d-t is-sm is-dim" x="474" y="34" text-anchor="middle">换算成人类时间</text>
+          <text class="d-t is-sm is-dim" x="626" y="34" text-anchor="middle">在哪</text>
+
+          <rect class="d-box is-ok" x="20" y="44" width="140" height="32" rx="5" />
+          <rect class="d-box is-ok" x="168" y="44" width="110" height="32" rx="5" />
+          <rect class="d-box is-ok" x="286" y="44" width="110" height="32" rx="5" />
+          <rect class="d-box is-ok" x="404" y="44" width="140" height="32" rx="5" />
+          <rect class="d-box is-ok" x="552" y="44" width="148" height="32" rx="5" />
+          <text class="d-t is-sm is-ok" x="90" y="65" text-anchor="middle">L1 Cache</text>
+          <text class="d-t is-sm is-dim" x="223" y="65" text-anchor="middle">32~64 KB</text>
+          <text class="d-t is-sm" x="341" y="65" text-anchor="middle">~1 ns</text>
+          <text class="d-t is-sm is-ok" x="474" y="65" text-anchor="middle">1 秒</text>
+          <text class="d-t is-sm is-dim" x="626" y="65" text-anchor="middle">每个核心内部</text>
+
+          <rect class="d-box is-ok" x="20" y="82" width="140" height="32" rx="5" />
+          <rect class="d-box is-ok" x="168" y="82" width="110" height="32" rx="5" />
+          <rect class="d-box is-ok" x="286" y="82" width="110" height="32" rx="5" />
+          <rect class="d-box is-ok" x="404" y="82" width="140" height="32" rx="5" />
+          <rect class="d-box is-ok" x="552" y="82" width="148" height="32" rx="5" />
+          <text class="d-t is-sm is-ok" x="90" y="103" text-anchor="middle">L2 Cache</text>
+          <text class="d-t is-sm is-dim" x="223" y="103" text-anchor="middle">256KB~2MB</text>
+          <text class="d-t is-sm" x="341" y="103" text-anchor="middle">~4 ns</text>
+          <text class="d-t is-sm is-ok" x="474" y="103" text-anchor="middle">4 秒</text>
+          <text class="d-t is-sm is-dim" x="626" y="103" text-anchor="middle">每个核心私有</text>
+
+          <rect class="d-box is-ok" x="20" y="120" width="140" height="32" rx="5" />
+          <rect class="d-box is-ok" x="168" y="120" width="110" height="32" rx="5" />
+          <rect class="d-box is-ok" x="286" y="120" width="110" height="32" rx="5" />
+          <rect class="d-box is-ok" x="404" y="120" width="140" height="32" rx="5" />
+          <rect class="d-box is-ok" x="552" y="120" width="148" height="32" rx="5" />
+          <text class="d-t is-sm is-ok" x="90" y="141" text-anchor="middle">L3 Cache</text>
+          <text class="d-t is-sm is-dim" x="223" y="141" text-anchor="middle">8~96 MB</text>
+          <text class="d-t is-sm" x="341" y="141" text-anchor="middle">~15 ns</text>
+          <text class="d-t is-sm is-ok" x="474" y="141" text-anchor="middle">15 秒</text>
+          <text class="d-t is-sm is-dim" x="626" y="141" text-anchor="middle">多个核心共享</text>
+
+          <rect class="d-box is-gold" x="20" y="158" width="140" height="32" rx="5" />
+          <rect class="d-box is-gold" x="168" y="158" width="110" height="32" rx="5" />
+          <rect class="d-box is-gold" x="286" y="158" width="110" height="32" rx="5" />
+          <rect class="d-box is-gold" x="404" y="158" width="140" height="32" rx="5" />
+          <rect class="d-box is-gold" x="552" y="158" width="148" height="32" rx="5" />
+          <text class="d-t is-sm is-gold" x="90" y="179" text-anchor="middle">DRAM 内存条</text>
+          <text class="d-t is-sm is-dim" x="223" y="179" text-anchor="middle">8GB~几 TB</text>
+          <text class="d-t is-sm" x="341" y="179" text-anchor="middle">~80 ns</text>
+          <text class="d-t is-sm is-gold" x="474" y="179" text-anchor="middle">1 分 20 秒</text>
+          <text class="d-t is-sm is-dim" x="626" y="179" text-anchor="middle">主板插槽</text>
+
+          <rect class="d-box is-warn" x="20" y="196" width="140" height="32" rx="5" />
+          <rect class="d-box is-warn" x="168" y="196" width="110" height="32" rx="5" />
+          <rect class="d-box is-warn" x="286" y="196" width="110" height="32" rx="5" />
+          <rect class="d-box is-warn" x="404" y="196" width="140" height="32" rx="5" />
+          <rect class="d-box is-warn" x="552" y="196" width="148" height="32" rx="5" />
+          <text class="d-t is-sm is-warn" x="90" y="217" text-anchor="middle">NVMe SSD</text>
+          <text class="d-t is-sm is-dim" x="223" y="217" text-anchor="middle">512GB~几 TB</text>
+          <text class="d-t is-sm" x="341" y="217" text-anchor="middle">~100 µs</text>
+          <text class="d-t is-sm is-warn" x="474" y="217" text-anchor="middle">一天多</text>
+          <text class="d-t is-sm is-dim" x="626" y="217" text-anchor="middle">PCIe 总线</text>
+
+          <rect class="d-box is-warn" x="20" y="234" width="140" height="32" rx="5" />
+          <rect class="d-box is-warn" x="168" y="234" width="110" height="32" rx="5" />
+          <rect class="d-box is-warn" x="286" y="234" width="110" height="32" rx="5" />
+          <rect class="d-box is-warn" x="404" y="234" width="140" height="32" rx="5" />
+          <rect class="d-box is-warn" x="552" y="234" width="148" height="32" rx="5" />
+          <text class="d-t is-sm is-warn" x="90" y="255" text-anchor="middle">机械硬盘</text>
+          <text class="d-t is-sm is-dim" x="223" y="255" text-anchor="middle">几 TB</text>
+          <text class="d-t is-sm" x="341" y="255" text-anchor="middle">~10 ms</text>
+          <text class="d-t is-sm is-warn" x="474" y="255" text-anchor="middle">快 4 个月</text>
+          <text class="d-t is-sm is-dim" x="626" y="255" text-anchor="middle">SATA 总线</text>
+
+          <text class="d-t is-sm is-gold" x="360" y="292" text-anchor="middle">把 L1 的 1ns 想象成 1 秒，其余按同比例放大 —— 这就是 Cache Miss 的真实代价</text>
+          <text class="d-t is-sm is-dim" x="360" y="314" text-anchor="middle">注意「人类时间」这一列的跳跃：越往下不是慢一点，是慢一个数量级</text>
+        </svg>
+        <figcaption>「换算成人类时间」这一列是这张表的价值所在：<strong>L1 命中和跑一趟内存，差的不是 80 倍这么抽象，而是「伸手拿」和「下楼跑一趟仓库」的区别</strong>。数字随 CPU 型号有出入，但量级关系是稳定的。</figcaption>
+      </figure>
+
+      <p>CPU 读一个变量时是<strong>逐级下沉</strong>的：每一级没命中，才去问下一级；最后读到的数据会顺着链路<strong>回填</strong>到各级 Cache 里，所以紧接着再访问同一块数据就很快。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 226" role="img" aria-label="CPU 读数据时依次查 L1、L2、L3，都没命中才访问 DRAM，读到的数据再回填进各级缓存">
+          <text class="d-t is-sm is-dim" x="360" y="40" text-anchor="middle">逐级下沉：每一级没命中，才去问下一级</text>
+
+          <rect class="d-box" x="20" y="60" width="110" height="40" rx="6" />
+          <text class="d-t is-sm" x="75" y="85" text-anchor="middle">CPU 核心</text>
+          <rect class="d-box is-ok" x="150" y="60" width="110" height="40" rx="6" />
+          <text class="d-t is-sm is-ok" x="205" y="85" text-anchor="middle">L1　~1ns</text>
+          <rect class="d-box is-ok" x="280" y="60" width="110" height="40" rx="6" />
+          <text class="d-t is-sm is-ok" x="335" y="85" text-anchor="middle">L2　~4ns</text>
+          <rect class="d-box is-ok" x="410" y="60" width="110" height="40" rx="6" />
+          <text class="d-t is-sm is-ok" x="465" y="85" text-anchor="middle">L3　~15ns</text>
+          <rect class="d-box is-gold" x="540" y="60" width="160" height="40" rx="6" />
+          <text class="d-t is-sm is-gold" x="620" y="85" text-anchor="middle">DRAM　~80ns</text>
+
+          <line class="d-line" x1="130" y1="80" x2="148" y2="80" marker-end="url(#ah)" />
+          <line class="d-line" x1="260" y1="80" x2="278" y2="80" marker-end="url(#ah)" />
+          <line class="d-line" x1="390" y1="80" x2="408" y2="80" marker-end="url(#ah)" />
+          <line class="d-line is-warn" x1="520" y1="80" x2="538" y2="80" marker-end="url(#ah-warn)" />
+
+          <line class="d-line is-ok" x1="620" y1="100" x2="620" y2="140" />
+          <line class="d-line is-ok" x1="620" y1="140" x2="205" y2="140" />
+          <line class="d-line is-ok" x1="205" y1="140" x2="205" y2="102" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="412" y="160" text-anchor="middle">读到的数据顺着链路回填，下次访问就能直接命中</text>
+
+          <text class="d-t is-sm is-gold" x="360" y="192" text-anchor="middle">一路 miss 到 DRAM，这一次访问就慢了几十倍</text>
+          <text class="d-t is-sm is-dim" x="360" y="214" text-anchor="middle">Cache 完全由硬件自动管理，你能做的是让访问模式更容易命中</text>
+        </svg>
+        <figcaption>关键一点：CPU 每次搬运的最小单位<strong>不是你要的那几个字节，而是一整条 cache line（通常 64 字节）</strong>。这个事实同时解释了后面两节——为什么结构体要讲对齐，以及为什么两个线程改相邻变量会互相拖慢。</figcaption>
+      </figure>
+
+      <h3>0.7 这对写代码意味着什么</h3>
+
+      <p>Cache 是硬件自动管理的，程序员既不能手动往里塞东西，也不需要。能做的只有一件事：<strong>让访问模式更容易命中</strong>。低延迟场景下的绝大部分内存优化，本质都是在做这件事：</p>
+
+      <ul>
+        <li><strong>顺序访问优于随机跳跃</strong>：连续遍历数组时，硬件预取器能提前把后面的 cache line 拉进来；链表那种指针满天飞的结构则完全预取不了。这也是 <code>vector</code> 通常比 <code>list</code> 快得多的根本原因，跟大 O 复杂度无关。</li>
+        <li><strong>把热点数据挤进更小的空间</strong>：结构体成员重排减少 padding（第 1 节），能让同样一条 cache line 装下更多有用数据。</li>
+        <li><strong>让频繁一起使用的数据挨在一起</strong>，同时<strong>让不同线程写的数据分开</strong>（第 2 节的伪共享）。</li>
+        <li><strong>用内存池换连续性</strong>（第 3 节）：池化分配出来的对象在地址上连续，遍历时缓存命中率远高于零散 <code>new</code> 出来的。</li>
+      </ul>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">两个常见的说法要留个心眼</span>
+        <p><strong>「L2 一定是核心独占、L3 一定是全芯片共享」</strong>——x86 上大体如此，但不绝对。AMD Zen 的 L3 是<strong>每个 CCD（核心组）私有</strong>的，跨 CCD 访问要走 Infinity Fabric，延迟明显更高；一些 ARM 芯片的 L2 也是整个核心簇共享。做线程绑核和 NUMA 调优时，这个差别是实打实的。</p>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试怎么答</span>
+        <p>问地址空间，就说「都在同一块物理内存上，分的是虚拟地址」，按<strong>四段来自 ELF、两段运行时增长</strong>铺开，再补一句虚拟页是惰性映射的、<code>malloc</code> 成功不等于占了内存（能区分 <code>VSZ</code> 和 <code>RSS</code> 是加分项）。<br />问存储层级，先把材质讲清楚：<strong>Cache 是 CPU 片内的 SRAM，内存条是 DRAM，DDR 只是 DRAM 的传输协议</strong>，三者不是并列关系；再讲 <code>L1 → L2 → L3 → DRAM</code> 逐级下沉加回填；最后落到「搬运单位是 64 字节的 cache line，所以优化的抓手是访问局部性」。</p>
       </div>
     </article>
 

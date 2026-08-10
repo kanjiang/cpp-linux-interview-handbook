@@ -302,6 +302,7 @@ while (true) {
         <span class="callout-label">形象比喻</span>
         <p><code>read</code> 是「派人去仓库把货搬到你办公室」；<code>mmap</code> 是「在你办公室墙上开一扇窗，直接看仓库」—— 货一直在仓库，你看的就是原件。</p>
       </div>
+      <h3>2.2 最小可用写法</h3>
       <pre class="answer-code-block"><code>int fd = open("data.bin", O_RDONLY);
 struct stat st; fstat(fd, &amp;st);
 

@@ -142,6 +142,17 @@ test("diagram styles referenced by pages exist in the stylesheet", () => {
   });
 });
 
+test("an expanded card takes the whole row so code has room", () => {
+  const css = fs.readFileSync(path.join(docsDir, "style.css"), "utf8");
+
+  // 网格项是外层的 .question-card，把 grid-column 写到里面的 details 上无效。
+  assert.match(
+    css,
+    /\.question-grid\s+\.question-card:has\(details\[open\]\)\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/,
+    "expanded cards should span every column"
+  );
+});
+
 test("an expanded card does not stretch its row neighbour", () => {
   const css = fs.readFileSync(path.join(docsDir, "style.css"), "utf8");
   const { renderQuestionCard } = require("./script.js");
@@ -202,4 +213,76 @@ test("table-of-contents anchors point at sections that exist", () => {
       assert.ok(ids.has(match[1]), name + " links to a missing anchor: #" + match[1]);
     }
   });
+});
+
+test("subsection numbers inside a section run in order", () => {
+  htmlFiles.forEach((name) => {
+    const source = readPage(name);
+    const headingPattern = /<h([23])>\s*(?:(\d+)\.(\d+)[.、 ])?/g;
+    let match;
+    let major = null;
+    let expected = null;
+
+    while ((match = headingPattern.exec(source))) {
+      const [, level, headMajor, headMinor] = match;
+      if (level === "2") {
+        major = null;
+        expected = null;
+        continue;
+      }
+      if (headMinor === undefined) continue;
+
+      const label = headMajor + "." + headMinor;
+      if (major === null) {
+        major = headMajor;
+        expected = 1;
+      }
+      assert.equal(
+        headMajor,
+        major,
+        name + " switches to major number " + headMajor + " at " + label + " without a new h2"
+      );
+      assert.equal(
+        Number(headMinor),
+        expected,
+        name + " jumps to " + label + ", expected " + major + "." + expected
+      );
+      expected += 1;
+    }
+  });
+});
+
+test("the memory notes explain the SRAM / DRAM / DDR hierarchy", () => {
+  const source = readPage("cpp-memory-perf-notes.html");
+
+  ["SRAM", "DRAM", "DDR5", "L1", "L2", "L3", "cache line"].forEach((term) => {
+    assert.ok(source.includes(term), "memory notes never mention " + term);
+  });
+
+  assert.ok(
+    /内存控制器（IMC）是集成在 CPU 片内/.test(source),
+    "memory notes should place the memory controller on the CPU die, not the motherboard"
+  );
+  assert.ok(
+    !/主板上的内存控制器发起请求/.test(source),
+    "memory notes still describe the pre-Nehalem northbridge memory controller"
+  );
+});
+
+test("the container notes cover the std::sort contract, not just the algorithm", () => {
+  const source = readPage("cpp-containers-notes.html");
+
+  ["introsort", "严格", "弱序", "未定义行为", "stable_sort", "nth_element", "partial_sort"].forEach(
+    (term) => {
+      assert.ok(source.includes(term), "container notes never mention " + term);
+    }
+  );
+
+  // 越界那一段是这节的核心：比较器自反会让分区循环走出数组。
+  assert.ok(/越界/.test(source), "container notes should explain the out-of-bounds read");
+  // 别只讲 sort，选型表要给出更省的替代品。
+  assert.ok(
+    /std::list/.test(source) && /list::sort/.test(source),
+    "container notes should note that std::sort needs random-access iterators"
+  );
 });

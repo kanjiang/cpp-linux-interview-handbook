@@ -27,8 +27,9 @@ cpp-linux-interview-handbook/
 - 关键词搜索
 - 分类 / 难度 / 高频 / 公司轨道筛选
 - 展开全部 / 收起全部
-- 每道题附标准回答要点
-- 八篇图解笔记，共 `52` 张内联 SVG 示意图（进程地址空间与惰性映射、内存对齐、缓存行、epoll 内部结构、锁与死锁、火焰图、B+ 树与回表、inline 关键字与内联优化、std::move 到底搬了什么等）
+- 每道题附标准回答要点；`C++ 基础`、`面向对象`、`内存管理` 三类还带图解步骤、易踩坑清单、参考代码与复杂度说明
+- 题卡展开后占满整行，宽屏上代码不用横向拖
+- 八篇图解笔记，共 `57` 张内联 SVG 示意图（进程地址空间与惰性映射、SRAM/DRAM/DDR 与三级缓存延迟阶梯、内存对齐、缓存行、epoll 内部结构、锁与死锁、火焰图、B+ 树与回表、inline 关键字与内联优化、std::move 到底搬了什么、introsort 三段切换与比较器越界等）
 - 恒生经纪业务 C++ 岗准备页（技能清单 + JD checklist + 复习路径）
 
 ## 本地预览
@@ -39,9 +40,9 @@ cpp-linux-interview-handbook/
 - `docs/hundsun.html`（恒生面试准备）
 - `docs/cpp-modern-notes.html`（C++ 核心笔记：引用/转发/lambda/inline 等）
 - `docs/cpp-value-semantics.html`（拷贝与移动、五法则、noexcept）
-- `docs/cpp-containers-notes.html`（容器与智能指针）
+- `docs/cpp-containers-notes.html`（容器与智能指针、std::sort 的契约与排序选型）
 - `docs/cpp-concurrency-notes.html`（并发与线程）
-- `docs/cpp-memory-perf-notes.html`（进程地址空间、内存对齐、伪共享、内存池、STL 底层）
+- `docs/cpp-memory-perf-notes.html`（进程地址空间、SRAM/DRAM/DDR 与 L1/L2/L3 层级、内存对齐、伪共享、内存池、STL 底层）
 - `docs/linux-sysprog-notes.html`（epoll / mmap / 信号 / core dump / OOM）
 - `docs/debug-tools-notes.html`（gdb / Sanitizer / valgrind / perf / strace）
 - `docs/db-notes.html`（事务 ACID / 隔离级别 / MVCC / 间隙锁 / B+ 树与回表 / 索引失效 / EXPLAIN）
@@ -67,6 +68,9 @@ python3 -m http.server 8000
 - 搜索与筛选逻辑
 - 练习模式题池构造
 - 统计信息计算
+- 重点分类（C++ 基础 / 面向对象 / 内存管理）的答案深度：要点、图解步骤、易踩坑、参考代码、复杂度说明缺一不可
+- 答案正文里不许出现裸 HTML 标签（渲染时会被转义，写了就会原样显示出来）
+- 示例代码的单行宽度预算
 
 `docs/pages.test.js` 校验静态页面本身，重点是那批手写的内联 SVG 示意图：
 
@@ -74,6 +78,8 @@ python3 -m http.server 8000
 - `url(#id)` 箭头引用是否都能在同一文档里解析到
 - 每张图是否带 `aria-label` 与图注
 - 页面之间的相对链接与 `?category=` 深链是否都指向真实存在的目标
+- 小节编号在同一章内连续（漏号会被揪出来）
+- 展开的题卡是否占满整行（多列布局下单列放不下代码）
 
 ```bash
 node --test docs/
