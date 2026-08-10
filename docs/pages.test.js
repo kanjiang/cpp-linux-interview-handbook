@@ -142,6 +142,23 @@ test("diagram styles referenced by pages exist in the stylesheet", () => {
   });
 });
 
+test("an expanded card does not stretch its row neighbour", () => {
+  const css = fs.readFileSync(path.join(docsDir, "style.css"), "utf8");
+  const { renderQuestionCard } = require("./script.js");
+
+  // 网格默认 align-items: stretch，同行的折叠卡会被展开卡撑到同样高度。
+  const rule = css.match(/\.question-grid:has\(details\[open\]\)\s*\{[^}]*\}/);
+  assert.ok(rule, "style.css is missing the rule that relaxes the grid when a card is open");
+  assert.match(rule[0], /align-items:\s*start/);
+
+  // 上面的选择器只有在卡片确实把 details 套在 .question-card 里时才成立。
+  const markup = renderQuestionCard(
+    { question: "q", keywords: [], difficulty: "basic", highFrequency: false, answerPoints: ["a"] },
+    true
+  );
+  assert.match(markup, /class="question-card"[\s\S]*<details open>/);
+});
+
 test("internal page links and category deep links resolve", () => {
   const { questions } = require("./questions.js");
   const categories = new Set(questions.map((item) => item.category));

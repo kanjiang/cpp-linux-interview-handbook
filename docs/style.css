@@ -499,6 +499,12 @@ a.secondary-button {
   gap: 16px;
 }
 
+/* 折叠状态下让同一行等高更整齐；一旦有卡片展开就改回自然高度，
+   否则同行那张折叠的卡会被拉成展开卡的高度，留下一大块空面板。 */
+.question-grid:has(details[open]) {
+  align-items: start;
+}
+
 .question-card {
   border-radius: var(--radius-lg);
   border: 1px solid rgba(79, 140, 255, 0.12);

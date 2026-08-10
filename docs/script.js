@@ -912,6 +912,7 @@ if (typeof module !== "undefined" && module.exports) {
     getCompanyTrackOptions,
     readCompanyTrackFromLocation,
     readCategoryFromLocation,
-    codeSectionTitle
+    codeSectionTitle,
+    renderQuestionCard
   };
 }
