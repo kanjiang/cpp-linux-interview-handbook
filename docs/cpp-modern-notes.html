@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>C++ 现代核心笔记 · 引用/转发/lambda/容器</title>
-  <meta name="description" content="整理自面试复习对话：&amp;&amp; 与 &amp;、forward、noexcept、类型推导、引用折叠、emplace、explicit、lambda、std::function、mutable 等。" />
+  <meta name="description" content="整理自面试复习对话：&amp;&amp; 与 &amp;、forward、noexcept、类型推导、引用折叠、emplace、explicit、lambda、std::function、mutable、inline 关键字与内联优化等。" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 
@@ -23,7 +23,7 @@
       <div class="hero-copy">
         <p class="eyebrow">C++ Core Notes</p>
         <h1>现代 C++ 核心知识点笔记</h1>
-        <p>覆盖引用与转发、类型推导、emplace、explicit、lambda、std::function、mutable，以及热路径/闭包/语法糖等概念。</p>
+        <p>覆盖引用与转发、类型推导、emplace、explicit、lambda、std::function、mutable、inline，以及热路径/闭包/语法糖等概念。</p>
         <div class="hero-actions">
           <a class="primary-button" href="./index.html?category=C%2B%2B%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">刷 C++ 知识直讲题</a>
           <a class="secondary-button" href="./cpp-value-semantics.html">拷贝与移动</a>
@@ -55,7 +55,8 @@
         <li><a href="#lambda">13. Lambda</a></li>
         <li><a href="#operator-function">14. <code>operator()</code> 与 <code>std::function</code></a></li>
         <li><a href="#mutable">15. <code>mutable</code></a></li>
-        <li><a href="#terms">16. 热路径 / 闭包 / 语法糖</a></li>
+        <li><a href="#inline">16. <code>inline</code> · 关键字 ≠ 内联优化</a></li>
+        <li><a href="#terms">17. 热路径 / 闭包 / 语法糖</a></li>
       </ol>
     </nav>
 
@@ -394,8 +395,186 @@ auto g = [&amp;x]() { return ++x; };        // 改外面的 x</code></pre>
       </ul>
     </article>
 
+    <article class="hundsun-panel guide-article" id="inline">
+      <h2>16. <code>inline</code> · 关键字和「内联优化」是两回事</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p><strong>内联优化</strong>像查字典：平时读到生词要翻到某一页去看解释（跳转、看完、跳回来），内联就是把解释<strong>直接抄进句子里</strong>，不用来回翻了。<br /><strong><code>inline</code> 关键字</strong>则完全是另一件事：它是发给链接器的一张<strong>「允许重名」许可证</strong>，说明这个函数在多个目标文件里各有一份定义是正常的，挑一份用就行。</p>
+      </div>
+
+      <p>这两件事之所以撞在一起，纯粹是历史原因：这个关键字诞生时确实带着「建议编译器内联」的意思，但现代编译器早就按自己的成本模型决定内不内联，把它当建议看都很勉强。所以下面这张对照表才是今天的实际情况。</p>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>内联优化（编译器行为）</th>
+              <th><code>inline</code> 关键字（语言规则）</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>在做什么</td>
+              <td>把函数调用替换成函数体</td>
+              <td>豁免 ODR，允许多个目标文件各有一份定义</td>
+            </tr>
+            <tr>
+              <td>解决什么问题</td>
+              <td>调用开销（传参、跳转、返回）</td>
+              <td>头文件里写函数定义会 multiple definition</td>
+            </tr>
+            <tr>
+              <td>谁说了算</td>
+              <td>编译器，按函数大小 / 调用次数 / <code>-O</code> 级别</td>
+              <td>你写不写，编译器必须照办</td>
+            </tr>
+            <tr>
+              <td>写了就一定发生吗</td>
+              <td><strong>不一定</strong>，函数太大照样被拒</td>
+              <td>一定，这是语言规则</td>
+            </tr>
+            <tr>
+              <td>不写就不会发生吗</td>
+              <td><strong>不是</strong>，同一个 <code>.cpp</code> 里照样会内联</td>
+              <td>不写就享受不到豁免，会链接报错</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>16.1 内联优化到底省下了什么</h3>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 352" role="img" aria-label="没有内联时一次调用要经历准备参数、跳转、执行、返回四步，内联后只剩下执行本身">
+          <rect class="d-box is-warn" x="20" y="34" width="320" height="252" rx="12" />
+          <text class="d-t is-lg is-warn" x="180" y="62" text-anchor="middle">没有内联</text>
+          <text class="d-t is-sm is-dim" x="180" y="84" text-anchor="middle">调一次 add(a, b) 要走四个动作</text>
+          <rect class="d-box is-muted" x="44" y="96" width="272" height="32" rx="5" />
+          <text class="d-t is-sm" x="180" y="117" text-anchor="middle">① 把参数放到寄存器 / 栈上</text>
+          <rect class="d-box is-warn" x="44" y="136" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-warn" x="180" y="157" text-anchor="middle">② 跳转到 add 的代码</text>
+          <rect class="d-box is-ok" x="44" y="176" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-ok" x="180" y="197" text-anchor="middle">③ 真正干活：算 a + b</text>
+          <rect class="d-box is-warn" x="44" y="216" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-warn" x="180" y="237" text-anchor="middle">④ 跳回来，取出返回值</text>
+          <text class="d-t is-sm is-warn" x="180" y="270" text-anchor="middle">①②④ 是纯开销，和算 a + b 无关</text>
+
+          <rect class="d-box is-ok" x="380" y="34" width="320" height="252" rx="12" />
+          <text class="d-t is-lg is-ok" x="540" y="62" text-anchor="middle">内联之后</text>
+          <text class="d-t is-sm is-dim" x="540" y="84" text-anchor="middle">函数体被抄到调用点，只剩下干活</text>
+          <rect class="d-box is-ghost" x="404" y="96" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-dim" x="540" y="117" text-anchor="middle">① 省了</text>
+          <rect class="d-box is-ghost" x="404" y="136" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-dim" x="540" y="157" text-anchor="middle">② 省了</text>
+          <rect class="d-box is-ok" x="404" y="176" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-ok" x="540" y="197" text-anchor="middle">③ 直接算 a + b</text>
+          <rect class="d-box is-ghost" x="404" y="216" width="272" height="32" rx="5" />
+          <text class="d-t is-sm is-dim" x="540" y="237" text-anchor="middle">④ 省了</text>
+          <text class="d-t is-sm is-ok" x="540" y="270" text-anchor="middle">省下的是跳转和返回，不是计算本身</text>
+
+          <text class="d-t is-sm is-gold" x="360" y="314" text-anchor="middle">函数体只有一行时，①②④ 的开销可能比 ③ 还大，内联收益明显</text>
+          <text class="d-t is-sm is-dim" x="360" y="336" text-anchor="middle">函数体几百行时，③ 占绝对多数，内联几乎不省时间，代码却被复制到每个调用点</text>
+        </svg>
+        <figcaption>所谓「内联的性能收益」，省下的是<strong>调用这件事本身的开销</strong>，不是函数里的计算。所以它只对<strong>短小且被频繁调用</strong>的函数有意义；给大函数强行内联，换来的是代码膨胀和指令缓存命中率下降，反而更慢。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">关键结论</span>
+        <p>内联是一笔<strong>拿代码体积换执行速度</strong>的交易。热路径上的一行小函数值得做，几百行的大函数做了就是亏本。这也是为什么编译器要自己按成本模型判断，而不是听你的 <code>inline</code>。</p>
+      </div>
+
+      <h3>16.2 <code>inline</code> 关键字真正在解决的问题</h3>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 348" role="img" aria-label="头文件里的函数定义被三个源文件包含后产生三份同名符号，不写 inline 会链接失败，写了 inline 链接器就挑一份保留">
+          <rect class="d-box" x="200" y="26" width="320" height="40" rx="8" />
+          <text class="d-t is-sm is-mono" x="360" y="51" text-anchor="middle">util.h：inline int add(int, int) { ... }</text>
+
+          <line class="d-line" x1="330" y1="66" x2="140" y2="96" marker-end="url(#ah)" />
+          <line class="d-line" x1="360" y1="66" x2="360" y2="96" marker-end="url(#ah)" />
+          <line class="d-line" x1="390" y1="66" x2="580" y2="96" marker-end="url(#ah)" />
+
+          <rect class="d-box is-muted" x="40" y="98" width="180" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="130" y="119" text-anchor="middle">a.cpp #include</text>
+          <rect class="d-box is-muted" x="270" y="98" width="180" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="360" y="119" text-anchor="middle">b.cpp #include</text>
+          <rect class="d-box is-muted" x="500" y="98" width="180" height="32" rx="5" />
+          <text class="d-t is-sm is-mono is-dim" x="590" y="119" text-anchor="middle">c.cpp #include</text>
+
+          <line class="d-line" x1="130" y1="130" x2="130" y2="154" marker-end="url(#ah)" />
+          <line class="d-line" x1="360" y1="130" x2="360" y2="154" marker-end="url(#ah)" />
+          <line class="d-line" x1="590" y1="130" x2="590" y2="154" marker-end="url(#ah)" />
+
+          <rect class="d-box is-gold" x="40" y="156" width="180" height="34" rx="5" />
+          <text class="d-t is-sm" x="130" y="178" text-anchor="middle">a.o 里一份 add</text>
+          <rect class="d-box is-gold" x="270" y="156" width="180" height="34" rx="5" />
+          <text class="d-t is-sm" x="360" y="178" text-anchor="middle">b.o 里一份 add</text>
+          <rect class="d-box is-gold" x="500" y="156" width="180" height="34" rx="5" />
+          <text class="d-t is-sm" x="590" y="178" text-anchor="middle">c.o 里一份 add</text>
+
+          <line class="d-line" x1="130" y1="190" x2="310" y2="218" marker-end="url(#ah)" />
+          <line class="d-line" x1="360" y1="190" x2="360" y2="218" marker-end="url(#ah)" />
+          <line class="d-line" x1="590" y1="190" x2="410" y2="218" marker-end="url(#ah)" />
+
+          <rect class="d-box" x="200" y="220" width="320" height="38" rx="8" />
+          <text class="d-t is-sm" x="360" y="244" text-anchor="middle">链接器：手上有三份同名的 add</text>
+
+          <line class="d-line is-warn" x1="330" y1="258" x2="190" y2="284" marker-end="url(#ah-warn)" />
+          <line class="d-line is-ok" x1="390" y1="258" x2="530" y2="284" marker-end="url(#ah-ok)" />
+
+          <rect class="d-box is-warn" x="40" y="286" width="300" height="48" rx="8" />
+          <text class="d-t is-sm is-warn" x="190" y="306" text-anchor="middle">没写 inline：算三个独立定义</text>
+          <text class="d-t is-sm is-mono is-dim" x="190" y="324" text-anchor="middle">multiple definition of `add'</text>
+
+          <rect class="d-box is-ok" x="380" y="286" width="300" height="48" rx="8" />
+          <text class="d-t is-sm is-ok" x="530" y="306" text-anchor="middle">写了 inline：算同一个函数的副本</text>
+          <text class="d-t is-sm is-dim" x="530" y="324" text-anchor="middle">留一份，其余丢弃，链接通过</text>
+        </svg>
+        <figcaption>这才是 <code>inline</code> 关键字今天的主要职责：<strong>豁免单一定义原则（ODR）</strong>。它和上面那张图里的性能优化，完全是两条独立的线。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">最常见的误解</span>
+        <p>「加了 <code>inline</code> 就会变快」——不成立。它连「建议」都算不上，编译器完全按自己的成本模型决定。反过来，「没加 <code>inline</code> 就不会被内联」——也不成立，同一个 <code>.cpp</code> 里的函数照样会被内联，开了 <code>-flto</code> 之后连跨文件都能内联。</p>
+      </div>
+
+      <p><strong>隐式就是 <code>inline</code> 的几种情况</strong>（不用自己写）：类内部直接定义的成员函数、<code>constexpr</code> 函数、模板。这也解释了为什么模板可以整个写在头文件里而不会重复定义。</p>
+
+      <pre class="answer-code-block"><code>// ① 关键字的真正作用：豁免 ODR
+// util.h —— 会被多个 .cpp 包含
+inline int add(int a, int b) { return a + b; }
+// 不加 inline 的话：multiple definition of `add'
+
+// ② 这些天生就是 inline，不用自己写
+struct Box {
+    int size() const { return n; }            // 类内定义，隐式 inline
+    int n = 0;
+};
+constexpr int twice(int x) { return 2 * x; }  // constexpr 隐式 inline
+template &lt;class T&gt; T max2(T a, T b);          // 模板同样不受限制
+
+// ③ 内联优化和关键字无关：下面没写 inline，
+//    但在同一个 .cpp 里被调用时照样可能被内联掉
+static int helper(int x) { return x * 2; }
+
+// ④ 真要强制内联只能用编译器扩展（非标准，慎用）
+__attribute__((always_inline)) inline int hot(int x) { return x + 1; }  // GCC/Clang
+__forceinline int hot2(int x) { return x + 1; }                        // MSVC
+
+// ⑤ C++17 的 inline 变量：头文件里直接定义，不用再去 .cpp 补一句
+inline int g_version = 3;
+struct Cfg { inline static int count = 0; };</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试怎么答</span>
+        <p>开场就把两件事拆开：「<code>inline</code> 这个词在 C++ 里对应两个不同的东西，一个是编译器的内联优化，一个是关键字的 ODR 豁免。」然后分别讲。常见追问只有两个：<strong>怎么让它一定内联</strong>（答编译器扩展，标准没这能力）、<strong>内联有什么坏处</strong>（答代码膨胀、指令缓存命中率下降、编译变慢）。</p>
+      </div>
+    </article>
+
     <article class="hundsun-panel guide-article" id="terms">
-      <h2>16. 热路径 / 闭包 / 语法糖</h2>
+      <h2>17. 热路径 / 闭包 / 语法糖</h2>
       <ul>
         <li><strong>热路径</strong>：跑得最勤、延迟最敏感的代码段（如下单主链路）。</li>
         <li><strong>闭包</strong>：可调用逻辑 + 捕获走的状态打包在一起；C++ 里常是带成员的函数对象。</li>

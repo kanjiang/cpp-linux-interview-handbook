@@ -28,7 +28,7 @@ cpp-linux-interview-handbook/
 - 分类 / 难度 / 高频 / 公司轨道筛选
 - 展开全部 / 收起全部
 - 每道题附标准回答要点
-- 八篇图解笔记，共 `46` 张内联 SVG 示意图（内存布局、缓存行、epoll 内部结构、锁与死锁、火焰图、B+ 树与回表等）
+- 八篇图解笔记，共 `48` 张内联 SVG 示意图（内存布局、缓存行、epoll 内部结构、锁与死锁、火焰图、B+ 树与回表、inline 关键字与内联优化等）
 - 恒生经纪业务 C++ 岗准备页（技能清单 + JD checklist + 复习路径）
 
 ## 本地预览
@@ -37,7 +37,7 @@ cpp-linux-interview-handbook/
 
 - `docs/index.html`
 - `docs/hundsun.html`（恒生面试准备）
-- `docs/cpp-modern-notes.html`（C++ 核心笔记：引用/转发/lambda 等）
+- `docs/cpp-modern-notes.html`（C++ 核心笔记：引用/转发/lambda/inline 等）
 - `docs/cpp-value-semantics.html`（拷贝与移动、五法则、noexcept）
 - `docs/cpp-containers-notes.html`（容器与智能指针）
 - `docs/cpp-concurrency-notes.html`（并发与线程）

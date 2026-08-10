@@ -400,6 +400,31 @@ test("database drills cover transactions, isolation, locking and indexing", () =
   assert.match(btree.answerPoints.join(" "), /磁盘|IO/);
 });
 
+test("C++ basics questions carry the same depth as the walkthrough categories", () => {
+  const basics = questions.filter((item) => item.category === "C++ 基础");
+
+  assert.ok(basics.length >= 11);
+  assert.ok(basics.every((item) => item.answerPoints.length >= 5));
+  assert.ok(basics.every((item) => (item.diagramSteps || []).length >= 5));
+  assert.ok(basics.every((item) => (item.pitfalls || []).length >= 4));
+  assert.ok(basics.every((item) => Boolean(item.cppCode)));
+  assert.ok(basics.every((item) => (item.complexity || []).length >= 2));
+});
+
+test("the inline question separates the keyword from the compiler optimisation", () => {
+  const entry = questions.find((item) => item.id === "cpp-inline");
+  const prose = entry.answerPoints.concat(entry.diagramSteps, entry.pitfalls).join(" ");
+
+  assert.equal(entry.category, "C++ 基础");
+  assert.ok(entry.highFrequency);
+  // 旧文案用「性能内联」这种含糊说法，没有点破关键字和优化是两件事。
+  assert.doesNotMatch(prose, /性能内联/);
+  assert.match(prose, /内联优化/);
+  assert.match(prose, /ODR|重复定义|multiple definition/);
+  assert.match(prose, /LTO/);
+  assert.match(entry.cppCode, /always_inline/);
+});
+
 test("Hundsun track covers new memory and system programming topics", () => {
   const ids = [
     "hs-cpp-alignment",

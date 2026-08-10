@@ -168,3 +168,21 @@ test("internal page links and category deep links resolve", () => {
     }
   });
 });
+
+test("table-of-contents anchors point at sections that exist", () => {
+  htmlFiles.forEach((name) => {
+    const source = readPage(name);
+    const ids = new Set();
+
+    const idPattern = /\sid="([^"]+)"/g;
+    let match;
+    while ((match = idPattern.exec(source))) {
+      ids.add(match[1]);
+    }
+
+    const anchorPattern = /href="#([^"]+)"/g;
+    while ((match = anchorPattern.exec(source))) {
+      assert.ok(ids.has(match[1]), name + " links to a missing anchor: #" + match[1]);
+    }
+  });
+});
