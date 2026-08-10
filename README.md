@@ -19,7 +19,7 @@ cpp-linux-interview-handbook/
 
 页面能力包括：
 
-- `320+` 道题，`30+` 个专题
+- `340+` 道题，`30+` 个专题
 - 浏览模式
 - 练习模式
 - 随机抽题
@@ -28,7 +28,7 @@ cpp-linux-interview-handbook/
 - 分类 / 难度 / 高频 / 公司轨道筛选
 - 展开全部 / 收起全部
 - 每道题附标准回答要点
-- 七篇图解笔记，共 `34` 张内联 SVG 示意图（内存布局、缓存行、epoll 内部结构、锁与死锁、火焰图等）
+- 八篇图解笔记，共 `44` 张内联 SVG 示意图（内存布局、缓存行、epoll 内部结构、锁与死锁、火焰图、B+ 树与回表等）
 - 恒生经纪业务 C++ 岗准备页（技能清单 + JD checklist + 复习路径）
 
 ## 本地预览
@@ -44,6 +44,7 @@ cpp-linux-interview-handbook/
 - `docs/cpp-memory-perf-notes.html`（内存对齐、伪共享、内存池、STL 底层）
 - `docs/linux-sysprog-notes.html`（epoll / mmap / 信号 / core dump / OOM）
 - `docs/debug-tools-notes.html`（gdb / Sanitizer / valgrind / perf / strace）
+- `docs/db-notes.html`（事务 ACID / 隔离级别 / MVCC / 间隙锁 / B+ 树与回表 / 索引失效 / EXPLAIN）
 - `docs/hundsun-uf3-guide.html` / `docs/hundsun-uf3-memo.html`（UF3.0 文档）
 
 如果你更习惯本地 HTTP 服务，也可以在仓库根目录执行：

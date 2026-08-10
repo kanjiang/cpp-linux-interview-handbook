@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>数据库形象笔记 · 事务/隔离级别/MVCC/索引/执行计划</title>
+  <meta name="description" content="用转账、图书馆借阅卡、字典排序的比喻讲清事务 ACID 与四个隔离级别、MVCC 版本链与 ReadView、行锁与间隙锁、B+ 树索引与回表、联合索引最左前缀、索引失效场景、EXPLAIN 判读以及 redo/undo/binlog 两阶段提交。" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="hundsun-page guide-page">
+  <svg class="d-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(149,179,255,.65)" /></marker>
+      <marker id="ah-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(240,86,86,.8)" /></marker>
+      <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(46,182,125,.8)" /></marker>
+      <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="rgba(255,176,32,.85)" /></marker>
+    </defs>
+  </svg>
+  <main class="app-shell">
+    <section class="hero hero-showcase hundsun-hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Database Essentials</p>
+        <h1>数据库 · 形象笔记</h1>
+        <p>岗位要求里的「熟悉事务特性、索引的使用」，考的不是背 SQL 语法，而是<strong>能不能解释清楚为什么</strong>：为什么并发下会读到脏数据、为什么读不加锁也能读到一致快照、为什么索引建了却用不上、为什么一条查询突然变成全表扫。这一篇用转账、借阅卡、字典排序的比喻把这些机制讲透。</p>
+        <div class="hero-actions">
+          <a class="primary-button" href="./index.html?category=%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9B%B4%E8%AE%B2">刷数据库直讲题</a>
+          <a class="secondary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20%E6%95%B0%E6%8D%AE%E5%BA%93%E5%9F%BA%E7%A1%80">恒生数据库题</a>
+          <a class="secondary-button" href="./cpp-concurrency-notes.html">并发与线程</a>
+          <a class="secondary-button" href="./debug-tools-notes.html">调试工具</a>
+          <a class="secondary-button" href="./hundsun.html">恒生准备页</a>
+          <a class="secondary-button" href="./index.html">返回总题库</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="hundsun-panel guide-toc">
+      <h2>目录</h2>
+      <ol>
+        <li><a href="#acid">1. 事务 · 要么全成，要么当作没发生过</a></li>
+        <li><a href="#isolation">2. 隔离级别 · 并发下会读出什么怪东西</a></li>
+        <li><a href="#mvcc">3. MVCC · 为什么读数据不用排队</a></li>
+        <li><a href="#lock">4. 锁 · 行锁、间隙锁与死锁</a></li>
+        <li><a href="#btree">5. 索引 · B+ 树为什么长成这样</a></li>
+        <li><a href="#clustered">6. 聚簇索引与二级索引 · 回表和覆盖索引</a></li>
+        <li><a href="#composite">7. 联合索引 · 最左前缀就是字典排序</a></li>
+        <li><a href="#invalid">8. 索引失效的典型场景</a></li>
+        <li><a href="#explain">9. EXPLAIN 怎么读</a></li>
+        <li><a href="#redolog">10. redo / undo / binlog · 持久性从哪来</a></li>
+        <li><a href="#cheatsheet">11. 一页速记</a></li>
+      </ol>
+    </nav>
+
+    <article class="hundsun-panel guide-article" id="acid">
+      <h2>1. 事务 · 要么全成，要么当作没发生过</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>转账不是一个动作，是<strong>两个动作</strong>：从我这儿扣、往你那儿加。如果中间断电了，钱就凭空消失了。事务的作用就是给这两个动作<strong>套一个信封</strong> —— 信封要么整个寄到，要么当作从来没寄过，绝不允许「寄了一半」。</p>
+      </div>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 285" role="img" aria-label="转账的两步操作中途崩溃，没有事务时钱会凭空消失，有事务时会按 undo 日志回滚到操作前的状态">
+          <text class="d-t is-sm is-dim" x="20" y="24">一次转账 = 两次写操作，中间崩了会怎样</text>
+
+          <rect class="d-box is-ok" x="20" y="38" width="230" height="48" rx="8" />
+          <text class="d-t is-sm is-ok" x="135" y="58" text-anchor="middle">① A 账户 −100</text>
+          <text class="d-t is-sm is-dim" x="135" y="76" text-anchor="middle">已经写下去了</text>
+
+          <path class="d-line" d="M250 62 L286 62" marker-end="url(#ah)" />
+
+          <rect class="d-box is-warn" x="290" y="38" width="230" height="48" rx="8" />
+          <text class="d-t is-sm is-warn" x="405" y="58" text-anchor="middle">② B 账户 +100</text>
+          <text class="d-t is-sm is-dim" x="405" y="76" text-anchor="middle">还没来得及执行</text>
+
+          <path class="d-line is-warn" d="M560 62 L528 62" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="566" y="66">这里断电</text>
+
+          <rect class="d-box is-warn" x="20" y="120" width="330" height="120" rx="12" />
+          <text class="d-t is-lg is-warn" x="185" y="150" text-anchor="middle">没有事务</text>
+          <text class="d-t is-sm is-dim" x="185" y="180" text-anchor="middle">A 的钱扣了，B 的钱没到</text>
+          <text class="d-t is-sm is-warn" x="185" y="206" text-anchor="middle">100 元凭空消失</text>
+          <text class="d-t is-sm is-dim" x="185" y="228" text-anchor="middle">账目再也对不平</text>
+
+          <rect class="d-box is-ok" x="380" y="120" width="320" height="120" rx="12" />
+          <text class="d-t is-lg is-ok" x="540" y="150" text-anchor="middle">有事务</text>
+          <text class="d-t is-sm is-dim" x="540" y="180" text-anchor="middle">重启时照着 undo 日志把 ① 撤销</text>
+          <text class="d-t is-sm is-ok" x="540" y="206" text-anchor="middle">回到转账前的样子</text>
+          <text class="d-t is-sm is-dim" x="540" y="228" text-anchor="middle">就像这笔转账从没发生过</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="272">注意「回滚」不是把钱补回去这么简单，而是<tspan class="is-gold">让这个事务的所有痕迹都消失</tspan>，包括它改过的每一行</text>
+        </svg>
+        <figcaption>原子性保护的是<strong>「半成功」这个最危险的状态</strong>。全失败其实不可怕，重试一次就行；可怕的是扣了款没记账，因为系统自己都不知道该从哪儿接着往下做。</figcaption>
+      </figure>
+
+      <h3>1.1 ACID 四个字分别在保证什么</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>保证什么</th><th>靠什么实现（InnoDB）</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>A</strong> 原子性</td><td>一组操作要么全做，要么全不做</td><td><strong>undo log</strong>（记录「怎么撤销」）</td></tr>
+            <tr><td><strong>C</strong> 一致性</td><td>数据始终满足业务约束（如账目总额不变）</td><td>其余三个 + 应用层约束共同达成，<strong>它是目的不是手段</strong></td></tr>
+            <tr><td><strong>I</strong> 隔离性</td><td>并发事务之间不互相干扰</td><td><strong>锁 + MVCC</strong></td></tr>
+            <tr><td><strong>D</strong> 持久性</td><td>提交了就不会因为宕机而丢</td><td><strong>redo log</strong>（先写日志再写数据页）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试常见追问</span>
+        <p>「ACID 里哪个最特殊？」答 <strong>C（一致性）</strong>：它和另外三个不是一个层次的东西。A、I、D 是数据库提供的<strong>手段</strong>，C 是这些手段要达成的<strong>目标</strong>，而且相当一部分一致性（比如「持仓不能为负」）数据库根本不知道，得靠业务代码和约束自己保证。</p>
+      </div>
+
+      <h3>1.2 交易系统里的实际用法</h3>
+      <pre class="answer-code-block"><code>START TRANSACTION;
+
+UPDATE account SET balance = balance - 100 WHERE id = 1 AND balance &gt;= 100;
+-- 检查影响行数：如果是 0，说明余额不足，要主动 ROLLBACK
+UPDATE account SET balance = balance + 100 WHERE id = 2;
+INSERT INTO transfer_log (from_id, to_id, amount) VALUES (1, 2, 100);
+
+COMMIT;</code></pre>
+      <div class="guide-callout is-warn">
+        <span class="callout-label">易踩坑</span>
+        <p>把余额判断写成先 <code>SELECT</code> 再 <code>UPDATE</code>，两条语句之间别人可能已经把钱花掉了。正确做法是<strong>把条件写进 <code>UPDATE</code> 的 <code>WHERE</code> 里</strong>，然后检查影响行数 —— 这样判断和扣减是同一个原子操作。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="isolation">
+      <h2>2. 隔离级别 · 并发下会读出什么怪东西</h2>
+
+      <p>如果事务之间完全不隔离，会读到三类越来越隐蔽的怪现象。先看清这三个现象，隔离级别的设计动机就自然明白了。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 335" role="img" aria-label="脏读读到未提交的数据，不可重复读同一行两次读到不同值，幻读同一条件两次查到不同行数">
+          <text class="d-t is-sm is-warn" x="20" y="24">脏读</text>
+          <rect class="d-box is-warn" x="120" y="34" width="170" height="46" rx="6" />
+          <text class="d-t is-sm is-warn" x="205" y="53" text-anchor="middle">事务 B 改了值</text>
+          <text class="d-t is-sm is-dim" x="205" y="70" text-anchor="middle">但还没提交</text>
+          <path class="d-line is-warn" d="M290 57 L298 57" marker-end="url(#ah-warn)" />
+          <rect class="d-box is-muted" x="302" y="34" width="170" height="46" rx="6" />
+          <text class="d-t is-sm" x="387" y="53" text-anchor="middle">事务 A 读到了它</text>
+          <text class="d-t is-sm is-dim" x="387" y="70" text-anchor="middle">拿去做了业务判断</text>
+          <path class="d-line is-warn" d="M472 57 L480 57" marker-end="url(#ah-warn)" />
+          <rect class="d-box is-warn" x="484" y="34" width="216" height="46" rx="6" />
+          <text class="d-t is-sm is-warn" x="592" y="53" text-anchor="middle">事务 B 回滚了</text>
+          <text class="d-t is-sm is-dim" x="592" y="70" text-anchor="middle">A 读到的值从来没存在过</text>
+
+          <line class="d-line is-faint" x1="20" y1="102" x2="700" y2="102" />
+
+          <text class="d-t is-sm is-gold" x="20" y="132">不可重复读</text>
+          <rect class="d-box is-muted" x="120" y="134" width="170" height="46" rx="6" />
+          <text class="d-t is-sm" x="205" y="153" text-anchor="middle">事务 A 读余额</text>
+          <text class="d-t is-sm is-dim" x="205" y="170" text-anchor="middle">得到 100</text>
+          <path class="d-line is-gold" d="M290 157 L298 157" marker-end="url(#ah-gold)" />
+          <rect class="d-box is-gold" x="302" y="134" width="170" height="46" rx="6" />
+          <text class="d-t is-sm is-gold" x="387" y="153" text-anchor="middle">事务 B 改成 200</text>
+          <text class="d-t is-sm is-dim" x="387" y="170" text-anchor="middle">并且提交了</text>
+          <path class="d-line is-gold" d="M472 157 L480 157" marker-end="url(#ah-gold)" />
+          <rect class="d-box is-warn" x="484" y="134" width="216" height="46" rx="6" />
+          <text class="d-t is-sm is-warn" x="592" y="153" text-anchor="middle">A 再读同一行</text>
+          <text class="d-t is-sm is-dim" x="592" y="170" text-anchor="middle">变成 200，同一事务里前后矛盾</text>
+
+          <line class="d-line is-faint" x1="20" y1="202" x2="700" y2="202" />
+
+          <text class="d-t is-sm is-accent" x="20" y="232">幻读</text>
+          <rect class="d-box is-muted" x="120" y="234" width="170" height="46" rx="6" />
+          <text class="d-t is-sm" x="205" y="253" text-anchor="middle">A 查余额大于千的</text>
+          <text class="d-t is-sm is-dim" x="205" y="270" text-anchor="middle">得到 3 行</text>
+          <path class="d-line" d="M290 257 L298 257" marker-end="url(#ah)" />
+          <rect class="d-box" x="302" y="234" width="170" height="46" rx="6" />
+          <text class="d-t is-sm is-accent" x="387" y="253" text-anchor="middle">B 插入一行新账户</text>
+          <text class="d-t is-sm is-dim" x="387" y="270" text-anchor="middle">刚好也满足条件</text>
+          <path class="d-line" d="M472 257 L480 257" marker-end="url(#ah)" />
+          <rect class="d-box is-warn" x="484" y="234" width="216" height="46" rx="6" />
+          <text class="d-t is-sm is-warn" x="592" y="253" text-anchor="middle">A 再查一次</text>
+          <text class="d-t is-sm is-dim" x="592" y="270" text-anchor="middle">变成 4 行，凭空多出一条</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="312">不可重复读针对的是<tspan class="is-gold">同一行的内容变了</tspan>；幻读针对的是<tspan class="is-accent">符合条件的行数变了</tspan> —— 这是两者唯一的区别</text>
+        </svg>
+        <figcaption>三个现象一个比一个隐蔽：脏读读到的是<strong>根本没存在过的数据</strong>；不可重复读是<strong>同一行前后不一致</strong>；幻读是<strong>同一个条件前后捞到的行数不一致</strong>。分清后两者，是这块最常见的考点。</figcaption>
+      </figure>
+
+      <h3>2.1 四个隔离级别</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>级别</th><th>脏读</th><th>不可重复读</th><th>幻读</th><th>说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>读未提交 RU</td><td>会</td><td>会</td><td>会</td><td>基本不用</td></tr>
+            <tr><td>读已提交 RC</td><td>不会</td><td>会</td><td>会</td><td><strong>Oracle / PostgreSQL 默认</strong>，互联网业务常用</td></tr>
+            <tr><td>可重复读 RR</td><td>不会</td><td>不会</td><td>InnoDB 下基本不会</td><td><strong>MySQL 默认</strong></td></tr>
+            <tr><td>串行化</td><td>不会</td><td>不会</td><td>不会</td><td>相当于全部串行，吞吐极低</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">这里最容易答错</span>
+        <p>SQL 标准说「可重复读仍然可能幻读」，但 <strong>InnoDB 的可重复读用间隙锁把幻读基本挡住了</strong>。所以标准答案是分两层说：<strong>按 SQL 标准 RR 不解决幻读；但在 InnoDB 的实现里，快照读靠 MVCC、当前读靠间隙锁，两条路都堵上了。</strong>能主动区分「标准」和「实现」，这题就答满了。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="mvcc">
+      <h2>3. MVCC · 为什么读数据不用排队</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>如果读也要加锁，那一个人在改数据时所有人都得干等着，数据库就没法用了。MVCC 的思路是：<strong>每次修改都不覆盖旧值，而是留一份旧版本</strong>。就像文档的历史版本，改的人在写新版，读的人照样看自己进来时那一版 —— <strong>读和写互不打扰</strong>。</p>
+      </div>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="一行数据的多个版本通过回滚指针串成版本链，读事务按 ReadView 沿链找到自己该看到的那个版本">
+          <text class="d-t is-sm is-dim" x="20" y="24">同一行数据的版本链（新版本在左，旧版本在右）</text>
+
+          <rect class="d-box is-warn" x="20" y="40" width="200" height="66" rx="8" />
+          <text class="d-t is-sm is-warn" x="120" y="62" text-anchor="middle">余额 300</text>
+          <text class="d-t is-sm is-dim" x="120" y="80" text-anchor="middle">事务 99 改的</text>
+          <text class="d-t is-sm is-dim" x="120" y="97" text-anchor="middle">还没提交</text>
+
+          <path class="d-line is-gold" d="M220 73 L256 73" marker-end="url(#ah-gold)" />
+
+          <rect class="d-box is-ok" x="260" y="40" width="200" height="66" rx="8" />
+          <text class="d-t is-sm is-ok" x="360" y="62" text-anchor="middle">余额 200</text>
+          <text class="d-t is-sm is-dim" x="360" y="80" text-anchor="middle">事务 80 改的</text>
+          <text class="d-t is-sm is-dim" x="360" y="97" text-anchor="middle">已提交</text>
+
+          <path class="d-line is-gold" d="M460 73 L496 73" marker-end="url(#ah-gold)" />
+
+          <rect class="d-box is-muted" x="500" y="40" width="200" height="66" rx="8" />
+          <text class="d-t is-sm is-dim" x="600" y="62" text-anchor="middle">余额 100</text>
+          <text class="d-t is-sm is-dim" x="600" y="80" text-anchor="middle">事务 60 改的</text>
+          <text class="d-t is-sm is-dim" x="600" y="97" text-anchor="middle">已提交</text>
+
+          <text class="d-t is-sm is-gold" x="20" y="132">旧版本都存在 undo log 里，用回滚指针一个串一个</text>
+
+          <rect class="d-box" x="120" y="196" width="230" height="60" rx="10" />
+          <text class="d-t is-sm is-accent" x="235" y="218" text-anchor="middle">事务 90 开始读</text>
+          <text class="d-t is-sm is-dim" x="235" y="238" text-anchor="middle">生成一张 ReadView</text>
+
+          <path class="d-line is-ok" d="M300 192 L352 114" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="378" y="170">沿着链往下找，停在这一版</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="284">判断规则：<tspan class="is-warn">比我晚开始的、以及还没提交的，都跳过</tspan>；找到第一个「在我开始时就已经提交」的版本为止</text>
+        </svg>
+        <figcaption>ReadView 相当于<strong>进门时拍下的一张快照</strong>：记下此刻哪些事务还在跑。之后无论别人怎么改，这个事务顺着版本链找到的永远是同一版数据 —— 这就是「可重复读」的由来，而且全程一把锁都不用加。</figcaption>
+      </figure>
+
+      <h3>3.1 快照读 vs 当前读（高频考点）</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th></th><th>快照读</th><th>当前读</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>语句</td><td>普通 <code>SELECT</code></td><td><code>SELECT ... FOR UPDATE</code> / <code>LOCK IN SHARE MODE</code> / <code>UPDATE</code> / <code>DELETE</code> / <code>INSERT</code></td></tr>
+            <tr><td>读到什么</td><td>ReadView 对应的<strong>历史版本</strong></td><td><strong>最新已提交版本</strong></td></tr>
+            <tr><td>加锁吗</td><td>不加锁</td><td><strong>加锁</strong>（行锁，可能带间隙锁）</td></tr>
+            <tr><td>为什么要有</td><td>读写不阻塞，吞吐高</td><td>要改数据，就必须基于最新值，否则会覆盖别人的修改</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">经典陷阱题</span>
+        <p>同一个事务里先普通 <code>SELECT</code> 读到 100，然后执行 <code>UPDATE account SET balance = balance + 1</code>，再 <code>SELECT</code>，会读到多少？答案是<strong>基于最新值加 1 的结果</strong>，因为 <code>UPDATE</code> 是当前读，它看到的是别人已提交的最新值，不是你之前那张快照。<strong>快照只管住普通读，管不住写。</strong></p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="lock">
+      <h2>4. 锁 · 行锁、间隙锁与死锁</h2>
+
+      <h3>4.1 间隙锁：锁的不只是行，还有行之间的「缝」</h3>
+      <p>MVCC 能挡住快照读的幻读，但挡不住当前读 —— 你 <code>FOR UPDATE</code> 查出 3 行准备处理，别人插进来第 4 行，一样出问题。InnoDB 的解法是<strong>连缝隙一起锁上</strong>。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 265" role="img" aria-label="间隙锁不仅锁住已存在的行，还锁住行与行之间的区间，阻止其他事务在区间内插入新行">
+          <text class="d-t is-sm is-dim" x="20" y="24">表里现有的主键：5、10、20</text>
+          <text class="d-t is-sm is-mono is-gold" x="20" y="48">SELECT ... WHERE id BETWEEN 5 AND 20 FOR UPDATE</text>
+
+          <line class="d-line" x1="60" y1="120" x2="96" y2="120" />
+          <line class="d-line" x1="164" y1="120" x2="326" y2="120" />
+          <line class="d-line" x1="394" y1="120" x2="556" y2="120" />
+          <line class="d-line" x1="624" y1="120" x2="680" y2="120" marker-end="url(#ah)" />
+
+          <rect class="d-fill-gold" x="160" y="106" width="170" height="28" rx="4" />
+          <rect class="d-fill-gold" x="390" y="106" width="170" height="28" rx="4" />
+          <text class="d-t is-sm is-gold" x="245" y="96" text-anchor="middle">缝隙也锁住</text>
+          <text class="d-t is-sm is-gold" x="475" y="96" text-anchor="middle">缝隙也锁住</text>
+
+          <rect class="d-box is-warn" x="100" y="102" width="60" height="36" rx="5" />
+          <text class="d-t is-sm is-mono is-warn" x="130" y="126" text-anchor="middle">5</text>
+          <rect class="d-box is-warn" x="330" y="102" width="60" height="36" rx="5" />
+          <text class="d-t is-sm is-mono is-warn" x="360" y="126" text-anchor="middle">10</text>
+          <rect class="d-box is-warn" x="560" y="102" width="60" height="36" rx="5" />
+          <text class="d-t is-sm is-mono is-warn" x="590" y="126" text-anchor="middle">20</text>
+
+          <path class="d-line is-warn" d="M245 216 L245 140" marker-end="url(#ah-warn)" />
+          <text class="d-t is-sm is-warn" x="245" y="234" text-anchor="middle">别的事务想插 id = 7</text>
+          <text class="d-t is-sm is-warn" x="245" y="252" text-anchor="middle">被挡住，只能等</text>
+
+          <text class="d-t is-sm is-dim" x="430" y="234">锁住行 = 防止已有的行被改</text>
+          <text class="d-t is-sm is-dim" x="430" y="252">锁住缝 = 防止新的行插进来</text>
+        </svg>
+        <figcaption>只锁行挡不住幻读，因为<strong>幻读的元凶是「还不存在的行」</strong>，没有行自然也就无从加锁。间隙锁的思路是转而锁住<strong>区间</strong>，让新行根本插不进来。代价是并发度下降：明明没有冲突的插入也会被挡。</figcaption>
+      </figure>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>锁</th><th>锁住什么</th><th>什么时候出现</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>记录锁 Record Lock</td><td>某一条已存在的索引记录</td><td>等值命中唯一索引</td></tr>
+            <tr><td>间隙锁 Gap Lock</td><td>两条记录之间的开区间，<strong>不含记录本身</strong></td><td>RR 级别下的范围查询</td></tr>
+            <tr><td>临键锁 Next-Key Lock</td><td>记录 + 它前面的间隙，<strong>InnoDB 的默认行为</strong></td><td>RR 级别下的当前读</td></tr>
+            <tr><td>意向锁 IS / IX</td><td>表级标记，表示「表里有行被锁了」</td><td>自动加，用来让表锁快速判断冲突，<strong>不和行锁互斥</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">最要命的一条</span>
+        <p><strong>行锁是加在索引上的，不是加在行上的。</strong>如果 <code>WHERE</code> 条件没走索引，InnoDB 只能逐行扫描并把<strong>扫过的每一行都锁上</strong> —— 效果等同于锁全表。所以「更新语句没走索引」不只是慢，它会直接把并发打死。</p>
+      </div>
+
+      <h3>4.2 死锁：和多线程里的死锁是同一回事</h3>
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 290" role="img" aria-label="两个事务按相反顺序更新两行，各自持有一把行锁又在等对方那把，形成死锁">
+          <rect class="d-box is-warn" x="60" y="40" width="170" height="50" rx="10" />
+          <text class="d-t is-sm is-warn" x="145" y="61" text-anchor="middle">事务 A</text>
+          <text class="d-t is-sm is-dim" x="145" y="79" text-anchor="middle">先改 1 号，再改 2 号</text>
+
+          <rect class="d-box is-warn" x="490" y="40" width="170" height="50" rx="10" />
+          <text class="d-t is-sm is-warn" x="575" y="61" text-anchor="middle">事务 B</text>
+          <text class="d-t is-sm is-dim" x="575" y="79" text-anchor="middle">先改 2 号，再改 1 号</text>
+
+          <rect class="d-box is-gold" x="60" y="186" width="170" height="50" rx="10" />
+          <text class="d-t is-sm is-gold" x="145" y="207" text-anchor="middle">1 号账户的行锁</text>
+          <text class="d-t is-sm is-dim" x="145" y="225" text-anchor="middle">被 A 拿着</text>
+
+          <rect class="d-box is-gold" x="490" y="186" width="170" height="50" rx="10" />
+          <text class="d-t is-sm is-gold" x="575" y="207" text-anchor="middle">2 号账户的行锁</text>
+          <text class="d-t is-sm is-dim" x="575" y="225" text-anchor="middle">被 B 拿着</text>
+
+          <path class="d-line is-ok" d="M100 94 L100 182" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="20" y="142">持有</text>
+          <path class="d-line is-ok" d="M620 94 L620 182" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="666" y="142">持有</text>
+
+          <path class="d-line is-warn" d="M230 70 L482 196" marker-end="url(#ah-warn)" />
+          <path class="d-line is-warn" d="M490 70 L238 196" marker-end="url(#ah-warn)" />
+          <rect class="d-mask" x="288" y="108" width="144" height="46" rx="8" />
+          <rect class="d-box is-warn" x="288" y="108" width="144" height="46" rx="8" />
+          <text class="d-t is-sm is-warn" x="360" y="127" text-anchor="middle">各拿一把</text>
+          <text class="d-t is-sm is-warn" x="360" y="146" text-anchor="middle">又都等对方</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="272">数据库比程序聪明的地方：它会主动检测到这个环，<tspan class="is-gold">挑一个回滚掉</tspan>，而不是让两边一起卡死</text>
+        </svg>
+        <figcaption>和多线程里的死锁是完全同一个模型：<strong>循环等待</strong>。区别在于数据库自带死锁检测，会主动牺牲一个事务来解开环，所以应用层必须<strong>做好被回滚后重试的准备</strong>。根治办法也和写代码一样 —— <strong>让所有事务按同一个顺序访问数据行</strong>（比如统一按主键从小到大更新）。</figcaption>
+      </figure>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="btree">
+      <h2>5. 索引 · B+ 树为什么长成这样</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>没有索引就是<strong>一页页翻整本书找关键词</strong>；有索引就是先翻书后面的<strong>索引页</strong>，看到「第 328 页」再直接跳过去。索引的本质是：多存一份按顺序排好的目录，用<strong>空间和写入代价</strong>换<strong>查找速度</strong>。</p>
+      </div>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 320" role="img" aria-label="B+ 树非叶子节点只存索引键所以扇出很大树很矮，全部数据都在叶子层且叶子之间用链表相连">
+          <rect class="d-box" x="270" y="30" width="180" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="360" y="55" text-anchor="middle">10 | 40 | 80</text>
+          <text class="d-t is-sm is-dim" x="470" y="55">根节点：只存键，不存数据</text>
+
+          <path class="d-line" d="M310 70 L150 106" marker-end="url(#ah)" />
+          <path class="d-line" d="M360 70 L360 106" marker-end="url(#ah)" />
+          <path class="d-line" d="M410 70 L570 106" marker-end="url(#ah)" />
+
+          <rect class="d-box" x="70" y="110" width="160" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="150" y="135" text-anchor="middle">2 | 5 | 8</text>
+          <rect class="d-box" x="280" y="110" width="160" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="360" y="135" text-anchor="middle">15 | 22 | 30</text>
+          <rect class="d-box" x="490" y="110" width="160" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="570" y="135" text-anchor="middle">50 | 60 | 70</text>
+
+          <path class="d-line" d="M150 150 L110 196" marker-end="url(#ah)" />
+          <path class="d-line" d="M360 150 L360 196" marker-end="url(#ah)" />
+          <path class="d-line" d="M570 150 L610 196" marker-end="url(#ah)" />
+
+          <rect class="d-box is-ok" x="30" y="200" width="160" height="46" rx="6" />
+          <text class="d-t is-sm is-ok" x="110" y="220" text-anchor="middle">叶子</text>
+          <text class="d-t is-sm is-dim" x="110" y="238" text-anchor="middle">键 + 完整数据</text>
+          <rect class="d-box is-ok" x="280" y="200" width="160" height="46" rx="6" />
+          <text class="d-t is-sm is-ok" x="360" y="220" text-anchor="middle">叶子</text>
+          <text class="d-t is-sm is-dim" x="360" y="238" text-anchor="middle">键 + 完整数据</text>
+          <rect class="d-box is-ok" x="530" y="200" width="160" height="46" rx="6" />
+          <text class="d-t is-sm is-ok" x="610" y="220" text-anchor="middle">叶子</text>
+          <text class="d-t is-sm is-dim" x="610" y="238" text-anchor="middle">键 + 完整数据</text>
+
+          <path class="d-line is-ok is-dash" d="M190 223 L276 223" marker-start="url(#ah-ok)" marker-end="url(#ah-ok)" />
+          <path class="d-line is-ok is-dash" d="M440 223 L526 223" marker-start="url(#ah-ok)" marker-end="url(#ah-ok)" />
+          <text class="d-t is-sm is-ok" x="20" y="272">叶子之间用双向链表串起来 → 范围查询只要找到起点，顺着链表扫就行</text>
+          <text class="d-t is-sm is-dim" x="20" y="298">非叶子只存键 → 一个 16KB 的页能塞下上千个键 → 三四层就够几千万行 → 查一次只需三四次磁盘 IO</text>
+        </svg>
+        <figcaption>B+ 树的两个设计取舍都是冲着磁盘去的：<strong>非叶子节点不存数据</strong>，所以一页能装下极多的键，树被压得很矮，而树高就等于磁盘 IO 次数；<strong>数据全在叶子层且串成链表</strong>，所以范围查询和排序不用回头遍历树。</figcaption>
+      </figure>
+
+      <h3>5.1 为什么不用别的结构</h3>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>结构</th><th>为什么不合适</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>二叉搜索树 / 红黑树</td><td>每个节点只有两个孩子，百万行数据树高二十多层，<strong>等于二十多次磁盘 IO</strong></td></tr>
+            <tr><td>哈希索引</td><td>等值查找确实是 O(1)，但<strong>不支持范围查询、不支持排序、不支持最左前缀</strong></td></tr>
+            <tr><td>B 树</td><td>非叶子节点也存数据，<strong>每页能放的键变少，树就变高</strong>；而且叶子没有链表，范围查询要回溯</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="guide-callout is-key">
+        <span class="callout-label">一句话回答</span>
+        <p>「为什么用 B+ 树？」<strong>因为磁盘 IO 是按页读的，而且慢。B+ 树把非叶子节点做成纯目录，让一页能装下上千个键，从而把树压到三四层；数据全放叶子并用链表连起来，让范围查询变成顺序扫描。</strong>把「磁盘」这个前提说出来，这题就答到点子上了。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="clustered">
+      <h2>6. 聚簇索引与二级索引 · 回表和覆盖索引</h2>
+
+      <p>InnoDB 里<strong>数据本身就存在主键索引的叶子上</strong>，这棵树叫聚簇索引。你在别的字段上建的索引叫二级索引，它的叶子存的<strong>不是数据，而是主键值</strong>。</p>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 305" role="img" aria-label="二级索引的叶子只存主键值，拿到主键后还要再查一次聚簇索引才能取到完整数据，这一步叫回表">
+          <text class="d-t is-sm is-accent" x="160" y="24" text-anchor="middle">二级索引（建在姓名上）</text>
+          <rect class="d-box" x="40" y="36" width="240" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-accent" x="160" y="61" text-anchor="middle">按姓名排序的目录</text>
+          <path class="d-line" d="M160 76 L160 106" marker-end="url(#ah)" />
+          <rect class="d-box is-gold" x="40" y="110" width="240" height="52" rx="6" />
+          <text class="d-t is-sm is-gold" x="160" y="131" text-anchor="middle">叶子：张三 → 主键 1024</text>
+          <text class="d-t is-sm is-dim" x="160" y="149" text-anchor="middle">只有主键，没有年龄和余额</text>
+
+          <text class="d-t is-sm is-ok" x="540" y="24" text-anchor="middle">聚簇索引（主键）</text>
+          <rect class="d-box is-ok" x="420" y="36" width="240" height="40" rx="6" />
+          <text class="d-t is-sm is-mono is-ok" x="540" y="61" text-anchor="middle">按主键排序的目录</text>
+          <path class="d-line is-ok" d="M540 76 L540 106" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-ok" x="420" y="110" width="240" height="52" rx="6" />
+          <text class="d-t is-sm is-ok" x="540" y="131" text-anchor="middle">叶子：整行数据</text>
+          <text class="d-t is-sm is-dim" x="540" y="149" text-anchor="middle">姓名、年龄、余额都在这</text>
+
+          <path class="d-line is-gold" d="M280 136 L416 136" marker-end="url(#ah-gold)" />
+          <text class="d-t is-sm is-gold" x="348" y="128" text-anchor="middle">回表</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="198">要查「张三的余额」，得走两棵树：先在姓名索引上找到主键，再拿主键去聚簇索引上取整行</text>
+
+          <line class="d-line is-faint" x1="20" y1="220" x2="700" y2="220" />
+
+          <text class="d-t is-sm is-ok" x="20" y="250">覆盖索引：如果只查「张三的主键」，第一棵树上就有答案</text>
+          <rect class="d-box is-ok" x="20" y="262" width="300" height="34" rx="6" />
+          <text class="d-t is-sm is-ok" x="170" y="284" text-anchor="middle">不用回表，省掉一整棵树的查找</text>
+          <text class="d-t is-sm is-dim" x="340" y="284">EXPLAIN 里 Extra 显示 Using index 就是它</text>
+        </svg>
+        <figcaption>回表 = <strong>查两棵树</strong>。这解释了两件实务上很重要的事：一是主键要短（每个二级索引的叶子都要存一份主键，主键越大索引越占空间），二是 <code>SELECT *</code> 常常比只查需要的列慢很多 —— 因为它逼着数据库必须回表。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">为什么建议用自增主键</span>
+        <p>聚簇索引是<strong>按主键顺序排列</strong>的。自增主键意味着新行总是追加在最后，页写满了就开新页；而如果用 UUID 这类随机主键，新行会插到中间，导致<strong>页分裂和大量随机 IO</strong>，写入性能明显下降，索引也更占空间。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="composite">
+      <h2>7. 联合索引 · 最左前缀就是字典排序</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>联合索引 <code>(省, 市, 区)</code> 就像通讯录<strong>先按省排、省相同再按市排、市也相同才按区排</strong>。所以「找浙江的」很快；「找浙江杭州的」也很快；但「找所有叫西湖区的」就没办法了 —— 因为区名在整本通讯录里<strong>是散乱的</strong>，你只能一页页翻。</p>
+      </div>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="联合索引按列顺序逐级排序，第一列全局有序，后面的列只在前面列相同时才有序">
+          <text class="d-t is-sm is-dim" x="20" y="24">索引 (省, 市, 区) 里记录的实际排列顺序</text>
+
+          <rect class="d-box is-ok" x="20" y="38" width="150" height="30" rx="5" />
+          <text class="d-t is-sm is-ok" x="95" y="59" text-anchor="middle">省</text>
+          <rect class="d-box is-gold" x="176" y="38" width="150" height="30" rx="5" />
+          <text class="d-t is-sm is-gold" x="251" y="59" text-anchor="middle">市</text>
+          <rect class="d-box is-warn" x="332" y="38" width="150" height="30" rx="5" />
+          <text class="d-t is-sm is-warn" x="407" y="59" text-anchor="middle">区</text>
+
+          <text class="d-t is-sm is-mono is-dim" x="95" y="92" text-anchor="middle">江苏</text>
+          <text class="d-t is-sm is-mono is-dim" x="251" y="92" text-anchor="middle">南京</text>
+          <text class="d-t is-sm is-mono is-dim" x="407" y="92" text-anchor="middle">鼓楼</text>
+
+          <text class="d-t is-sm is-mono is-dim" x="95" y="116" text-anchor="middle">江苏</text>
+          <text class="d-t is-sm is-mono is-dim" x="251" y="116" text-anchor="middle">苏州</text>
+          <text class="d-t is-sm is-mono is-dim" x="407" y="116" text-anchor="middle">姑苏</text>
+
+          <text class="d-t is-sm is-mono is-dim" x="95" y="140" text-anchor="middle">浙江</text>
+          <text class="d-t is-sm is-mono is-dim" x="251" y="140" text-anchor="middle">杭州</text>
+          <text class="d-t is-sm is-mono is-dim" x="407" y="140" text-anchor="middle">西湖</text>
+
+          <text class="d-t is-sm is-mono is-dim" x="95" y="164" text-anchor="middle">浙江</text>
+          <text class="d-t is-sm is-mono is-dim" x="251" y="164" text-anchor="middle">杭州</text>
+          <text class="d-t is-sm is-mono is-dim" x="407" y="164" text-anchor="middle">余杭</text>
+
+          <text class="d-t is-sm is-mono is-dim" x="95" y="188" text-anchor="middle">浙江</text>
+          <text class="d-t is-sm is-mono is-dim" x="251" y="188" text-anchor="middle">宁波</text>
+          <text class="d-t is-sm is-mono is-dim" x="407" y="188" text-anchor="middle">海曙</text>
+
+          <text class="d-t is-sm is-ok" x="516" y="92">整体有序</text>
+          <text class="d-t is-sm is-gold" x="516" y="140">省相同时才有序</text>
+          <text class="d-t is-sm is-warn" x="516" y="188">全局是乱的</text>
+
+          <line class="d-line is-faint" x1="20" y1="212" x2="700" y2="212" />
+
+          <rect class="d-box is-ok" x="20" y="228" width="216" height="56" rx="8" />
+          <text class="d-t is-sm is-mono is-ok" x="128" y="250" text-anchor="middle">WHERE 省 = ?</text>
+          <text class="d-t is-sm is-ok" x="128" y="272" text-anchor="middle">✓ 能用上索引</text>
+
+          <rect class="d-box is-ok" x="248" y="228" width="216" height="56" rx="8" />
+          <text class="d-t is-sm is-mono is-ok" x="356" y="250" text-anchor="middle">WHERE 省 = ? AND 市 = ?</text>
+          <text class="d-t is-sm is-ok" x="356" y="272" text-anchor="middle">✓ 能用上索引</text>
+
+          <rect class="d-box is-warn" x="476" y="228" width="224" height="56" rx="8" />
+          <text class="d-t is-sm is-mono is-warn" x="588" y="250" text-anchor="middle">WHERE 区 = ?</text>
+          <text class="d-t is-sm is-warn" x="588" y="272" text-anchor="middle">✗ 跳过了第一列，用不上</text>
+        </svg>
+        <figcaption>最左前缀不是一条需要背的规则，而是<strong>排序方式的必然结果</strong>：后面的列只在前面的列相同时才是有序的，一旦跳过前面的列，后面那列在全局就是乱序的，二分查找无从下手。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">怎么设计联合索引的列顺序</span>
+        <p><strong>区分度高的、以及等值查询的列放前面，范围查询的列放最后。</strong>因为范围条件之后的列就用不上索引了：<code>WHERE a = 1 AND b &gt; 10 AND c = 5</code> 这个查询里，<code>c</code> 是排不上用场的，索引只能用到 <code>a</code> 和 <code>b</code>。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="invalid">
+      <h2>8. 索引失效的典型场景</h2>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 250" role="img" aria-label="直接比较字段可以在索引树上二分查找，对字段做函数运算则必须逐行计算无法使用索引">
+          <text class="d-t is-sm is-ok" x="20" y="24">直接拿字段比较</text>
+          <rect class="d-box is-ok" x="20" y="36" width="300" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-ok" x="170" y="58" text-anchor="middle">WHERE create_time &gt; '2026-01-01'</text>
+          <path class="d-line is-ok" d="M170 70 L170 96" marker-end="url(#ah-ok)" />
+          <rect class="d-box is-ok" x="20" y="100" width="300" height="52" rx="6" />
+          <text class="d-t is-sm is-ok" x="170" y="122" text-anchor="middle">索引树上直接二分</text>
+          <text class="d-t is-sm is-dim" x="170" y="140" text-anchor="middle">几次跳转就定位到起点</text>
+
+          <text class="d-t is-sm is-warn" x="400" y="24">对字段做了运算</text>
+          <rect class="d-box is-warn" x="400" y="36" width="300" height="34" rx="6" />
+          <text class="d-t is-sm is-mono is-warn" x="550" y="58" text-anchor="middle">WHERE DATE(create_time) = ?</text>
+          <path class="d-line is-warn" d="M550 70 L550 96" marker-end="url(#ah-warn)" />
+          <rect class="d-box is-warn" x="400" y="100" width="300" height="52" rx="6" />
+          <text class="d-t is-sm is-warn" x="550" y="122" text-anchor="middle">得先把每一行都算一遍</text>
+          <text class="d-t is-sm is-dim" x="550" y="140" text-anchor="middle">才知道等不等，只能全表扫</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="192">索引树是<tspan class="is-ok">按字段原值排序</tspan>的。一旦给字段套上函数，算出来的结果在树上就<tspan class="is-warn">不再有序</tspan>，二分查找失去前提</text>
+          <text class="d-t is-sm is-gold" x="20" y="222">改法也很直接：把运算挪到常量那一侧 —— <tspan class="is-mono">WHERE create_time &gt;= ? AND create_time &lt; ?</tspan></text>
+        </svg>
+        <figcaption>几乎所有索引失效的场景，本质都是同一句话：<strong>你比较的东西不再是索引里排好序的那个东西</strong>。函数、类型转换、前导模糊匹配都属于这一类。</figcaption>
+      </figure>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>写法</th><th>为什么用不上索引</th><th>怎么改</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>WHERE DATE(t) = ?</code></td><td>函数结果在索引里不是有序的</td><td>改成对原字段的范围比较</td></tr>
+            <tr><td><code>WHERE id + 1 = 10</code></td><td>同上，字段参与了运算</td><td>改成 <code>id = 9</code></td></tr>
+            <tr><td><code>WHERE name LIKE '%三'</code></td><td>不知道开头就没法在有序目录里定位</td><td><code>'三%'</code> 可以用；确实要后模糊就上全文索引</td></tr>
+            <tr><td><code>WHERE phone = 13800000000</code>（<code>phone</code> 是字符串）</td><td>类型不匹配，会<strong>隐式把字段转成数字</strong>，等于套了函数</td><td>参数加引号，保持类型一致</td></tr>
+            <tr><td><code>WHERE a = 1 OR b = 2</code></td><td><code>b</code> 上没索引时整条只能全表扫</td><td>两列都建索引，或改写成 <code>UNION</code></td></tr>
+            <tr><td>索引列区分度太低（如性别）</td><td>命中一半的行，回表成本比全表扫还高</td><td>优化器会主动放弃索引，<strong>这是对的</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-warn">
+        <span class="callout-label">别背成死规则</span>
+        <p>网上流传的「索引失效十八条」里有不少是<strong>过时或有条件的</strong>。真正可靠的做法是：<strong>拿不准就 <code>EXPLAIN</code> 跑一遍</strong>。优化器是基于统计信息做成本估算的，同一条 SQL 在数据量变化后可能走完全不同的计划。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="explain">
+      <h2>9. EXPLAIN 怎么读</h2>
+      <p>面试里问「你怎么优化慢查询」，标准起手式就是 <code>EXPLAIN</code>。只需要重点看四列。</p>
+
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>列</th><th>看什么</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><strong><code>type</code></strong></td><td>访问方式，<strong>最重要的一列</strong>。从好到坏：<code>const</code> → <code>eq_ref</code> → <code>ref</code> → <code>range</code> → <code>index</code> → <code>ALL</code>。<strong>看到 <code>ALL</code> 就是全表扫</strong></td></tr>
+            <tr><td><code>key</code></td><td>实际用了哪个索引。为 <code>NULL</code> 说明一个都没用上</td></tr>
+            <tr><td><code>rows</code></td><td>预估要扫多少行。和最终返回行数差距越大，说明白扫的越多</td></tr>
+            <tr><td><strong><code>Extra</code></strong></td><td><code>Using index</code> = 覆盖索引，很好；<code>Using where</code> = 取回来再过滤；<strong><code>Using filesort</code> / <code>Using temporary</code> = 需要额外排序或临时表，通常是要优化的信号</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre class="answer-code-block"><code>EXPLAIN SELECT id, amount FROM trade
+        WHERE account_id = 1001 AND trade_time &gt;= '2026-01-01'
+        ORDER BY trade_time;
+
+-- 理想结果：
+--   type  = range
+--   key   = idx_account_time        （联合索引 account_id + trade_time）
+--   Extra = Using index             （要的列都在索引里，不用回表）
+--   而且没有 Using filesort ——
+--   因为索引本身就是按 trade_time 有序的，排序被顺带省掉了</code></pre>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">优化慢查询的标准回答</span>
+        <p>① 先用慢查询日志定位到具体是哪条 SQL；② <code>EXPLAIN</code> 看是不是全表扫、有没有走对索引、有没有 filesort；③ 按最左前缀和覆盖索引的思路调整索引或改写 SQL；④ 再看是不是本身就返回了太多数据（该分页、该聚合、该拆分）；⑤ <strong>改完再 <code>EXPLAIN</code> 和压测一次做对比</strong>。最后一步最容易被忘，但没有前后对比就说不清到底优化没优化。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="redolog">
+      <h2>10. redo / undo / binlog · 持久性从哪来</h2>
+
+      <div class="guide-callout is-metaphor">
+        <span class="callout-label">形象比喻</span>
+        <p>改数据时如果每次都去磁盘上把那一页找出来改掉，全是随机 IO，慢得没法用。所以数据库的做法是：<strong>先在本子上按顺序记一句「我要把某页改成什么样」，再慢慢把真正的页刷下去</strong>。这个本子就是 redo log，顺序写非常快。就算这时断电，重启后照着本子重做一遍就行。</p>
+      </div>
+
+      <figure class="guide-figure">
+        <svg viewBox="0 0 720 300" role="img" aria-label="更新一行数据时先写 undo 再改内存页并写 redo，提交时按两阶段提交先写 redo prepare 再写 binlog 最后 redo commit">
+          <rect class="d-box is-gold" x="20" y="34" width="150" height="52" rx="8" />
+          <text class="d-t is-sm is-gold" x="95" y="55" text-anchor="middle">① 写 undo</text>
+          <text class="d-t is-sm is-dim" x="95" y="73" text-anchor="middle">记下怎么撤销</text>
+          <path class="d-line" d="M170 60 L196 60" marker-end="url(#ah)" />
+
+          <rect class="d-box" x="200" y="34" width="150" height="52" rx="8" />
+          <text class="d-t is-sm is-accent" x="275" y="55" text-anchor="middle">② 改内存页</text>
+          <text class="d-t is-sm is-dim" x="275" y="73" text-anchor="middle">磁盘还没动</text>
+          <path class="d-line" d="M350 60 L376 60" marker-end="url(#ah)" />
+
+          <rect class="d-box is-ok" x="380" y="34" width="150" height="52" rx="8" />
+          <text class="d-t is-sm is-ok" x="455" y="55" text-anchor="middle">③ 写 redo</text>
+          <text class="d-t is-sm is-dim" x="455" y="73" text-anchor="middle">顺序写，很快</text>
+
+          <text class="d-t is-sm is-dim" x="556" y="65">以上是一条 UPDATE</text>
+
+          <line class="d-line is-faint" x1="20" y1="110" x2="700" y2="110" />
+
+          <text class="d-t is-sm is-gold" x="20" y="138">COMMIT 时的两阶段提交</text>
+
+          <rect class="d-box is-ok" x="20" y="152" width="200" height="52" rx="8" />
+          <text class="d-t is-sm is-ok" x="120" y="173" text-anchor="middle">redo 标记为 prepare</text>
+          <text class="d-t is-sm is-dim" x="120" y="191" text-anchor="middle">准备好了，但还没算数</text>
+          <path class="d-line is-ok" d="M220 178 L246 178" marker-end="url(#ah-ok)" />
+
+          <rect class="d-box is-gold" x="250" y="152" width="200" height="52" rx="8" />
+          <text class="d-t is-sm is-gold" x="350" y="173" text-anchor="middle">写 binlog</text>
+          <text class="d-t is-sm is-dim" x="350" y="191" text-anchor="middle">主从复制和备份靠它</text>
+          <path class="d-line is-ok" d="M450 178 L476 178" marker-end="url(#ah-ok)" />
+
+          <rect class="d-box is-ok" x="480" y="152" width="200" height="52" rx="8" />
+          <text class="d-t is-sm is-ok" x="580" y="173" text-anchor="middle">redo 标记为 commit</text>
+          <text class="d-t is-sm is-dim" x="580" y="191" text-anchor="middle">到这里才真的提交</text>
+
+          <text class="d-t is-sm is-dim" x="20" y="242">崩溃恢复时的判断：redo 已 commit 就直接生效；只到 prepare，就去看 binlog 写完没有</text>
+          <text class="d-t is-sm is-dim" x="20" y="266">binlog 完整就补提交，不完整就回滚 —— 这样能保证<tspan class="is-gold">主库的数据和从库收到的日志永远一致</tspan></text>
+          <text class="d-t is-sm is-warn" x="20" y="290">如果不用两阶段，两个日志之间断电就会出现主从数据对不上，而且事后无法察觉</text>
+        </svg>
+        <figcaption>三个日志分工不同，别混为一谈：<strong>undo 管回滚和 MVCC 的旧版本，redo 管崩溃恢复，binlog 管主从复制和备份恢复</strong>。redo 是 InnoDB 引擎层的、循环写；binlog 是 MySQL Server 层的、追加写，任何存储引擎都有。</figcaption>
+      </figure>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">WAL 和你写过的代码是同一个思路</span>
+        <p>Write-Ahead Logging 的核心是<strong>把随机写换成顺序写</strong> —— 先顺序追加一条日志（快），再择机把真正的数据页批量刷到磁盘（慢但可以攒着做）。这和交易系统里「先落 journal 再更新内存态」、和 Linux 的 page cache 回写，是完全同一套思路。</p>
+      </div>
+    </article>
+
+    <article class="hundsun-panel guide-article" id="cheatsheet">
+      <h2>11. 一页速记</h2>
+      <div class="guide-table-wrap">
+        <table class="guide-table">
+          <thead>
+            <tr><th>问题</th><th>一句话答案</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>ACID 靠什么实现</td><td>原子性靠 undo、持久性靠 redo、隔离性靠锁和 MVCC，一致性是前三者要达成的目标</td></tr>
+            <tr><td>不可重复读 vs 幻读</td><td>前者是<strong>同一行的值变了</strong>，后者是<strong>符合条件的行数变了</strong></td></tr>
+            <tr><td>MySQL 默认隔离级别</td><td>可重复读；Oracle 和 PostgreSQL 是读已提交</td></tr>
+            <tr><td>RR 解决幻读了吗</td><td>标准说没有；InnoDB 里快照读靠 MVCC、当前读靠间隙锁，基本解决了</td></tr>
+            <tr><td>MVCC 是什么</td><td>每行留多个版本串成链，读事务按进门时的 ReadView 找到该看的那版，<strong>读不加锁</strong></td></tr>
+            <tr><td>快照读 vs 当前读</td><td>普通 SELECT 读历史快照不加锁；增删改和 FOR UPDATE 读最新值并加锁</td></tr>
+            <tr><td>为什么用 B+ 树</td><td>非叶子只存键 → 扇出大树矮 → 磁盘 IO 少；叶子成链表 → 范围查询快</td></tr>
+            <tr><td>什么是回表</td><td>二级索引叶子只有主键，还要再查一次聚簇索引取整行；要的列都在索引里就叫覆盖索引</td></tr>
+            <tr><td>为什么用自增主键</td><td>顺序追加，避免页分裂和随机 IO；主键短，所有二级索引也跟着省空间</td></tr>
+            <tr><td>最左前缀为什么存在</td><td>联合索引是逐级排序的，跳过前面的列，后面那列在全局就是乱的</td></tr>
+            <tr><td>索引什么时候失效</td><td>本质只有一条：<strong>你比较的东西不再是索引里排好序的那个东西</strong></td></tr>
+            <tr><td>EXPLAIN 看什么</td><td><code>type</code> 别是 <code>ALL</code>、<code>key</code> 别是 <code>NULL</code>、<code>Extra</code> 别有 <code>filesort</code> 和 <code>temporary</code></td></tr>
+            <tr><td>行锁加在哪</td><td><strong>加在索引上</strong>。没走索引就退化成锁住扫过的每一行，等于锁表</td></tr>
+            <tr><td>数据库死锁怎么办</td><td>数据库会自动检测并回滚其中一个，<strong>应用层必须能重试</strong>；根治靠统一加锁顺序</td></tr>
+            <tr><td>redo / undo / binlog</td><td>redo 管崩溃恢复、undo 管回滚和旧版本、binlog 管主从复制和备份</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="guide-callout is-key">
+        <span class="callout-label">面试怎么讲最稳</span>
+        <p>这块的加分点不在于记住多少条结论，而在于<strong>能不能把机制讲成因果链</strong>。比如被问到索引，与其罗列失效场景，不如说：「索引是按字段原值排好序的目录，所以任何让比较对象不再是这个原值的写法 —— 函数、运算、隐式类型转换、前导模糊 —— 都会让有序性失去意义，也就用不上索引了。」<strong>一句话覆盖一整类问题，比背十八条更能说明你真懂。</strong></p>
+      </div>
+
+      <div class="hero-actions hundsun-inline-actions">
+        <a class="primary-button" href="./index.html?category=%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9B%B4%E8%AE%B2">去刷数据库直讲（14 题）</a>
+        <a class="secondary-button" href="./index.html?company=hundsun&amp;category=%E6%81%92%E7%94%9F%20%2F%20%E6%95%B0%E6%8D%AE%E5%BA%93%E5%9F%BA%E7%A1%80">恒生数据库口述题</a>
+        <a class="secondary-button" href="./cpp-concurrency-notes.html">并发与线程（锁的同一套模型）</a>
+        <a class="secondary-button" href="./debug-tools-notes.html">调试工具</a>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <p>整理自面试复习对话笔记。数据库的锁与死锁和「并发与线程」里的互斥量是同一套模型，可以对照着看；WAL 的顺序写思路则和「Linux 系统编程」里的 page cache 回写相通。</p>
+      <p><a href="./index.html">总题库</a> · <a href="./hundsun.html">恒生准备页</a> · <a href="./cpp-concurrency-notes.html">并发与线程</a> · <a href="./linux-sysprog-notes.html">Linux 系统编程</a></p>
+    </footer>
+  </main>
+</body>
+
+</html>

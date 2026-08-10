@@ -11,7 +11,8 @@ const {
   matchesCompanyTrack,
   getCompanyTrackOptions,
   readCompanyTrackFromLocation,
-  readCategoryFromLocation
+  readCategoryFromLocation,
+  codeSectionTitle
 } = require("./script.js");
 const { questions } = require("./questions.js");
 
@@ -348,6 +349,55 @@ test("debugging drills cover gdb, sanitizers, valgrind, perf and strace", () => 
   const watch = questions.find((item) => item.id === "debug-tool-gdb-watch");
   assert.match(watch.cppCode, /watch/);
   assert.match(watch.answerPoints.join(" "), /Old value|观察点/);
+});
+
+test("code blocks are labelled by the language the category actually uses", () => {
+  assert.equal(codeSectionTitle("数据库直讲"), "SQL 示例");
+  assert.equal(codeSectionTitle("调试工具直讲"), "命令示例");
+  assert.equal(codeSectionTitle("C++ 知识直讲"), "C++ 参考代码");
+});
+
+test("questions dataset includes database drill category", () => {
+  const drills = questions.filter((item) => item.category === "数据库直讲");
+
+  assert.ok(drills.length >= 12);
+  assert.ok(drills.every((item) => item.id.indexOf("db-") === 0));
+  assert.ok(drills.every((item) => item.answerPoints.length >= 4));
+  assert.ok(drills.every((item) => (item.diagramSteps || []).length >= 3));
+  assert.ok(drills.every((item) => (item.pitfalls || []).length >= 3));
+  assert.ok(drills.filter((item) => Boolean(item.cppCode)).length >= 10);
+});
+
+test("database drills cover transactions, isolation, locking and indexing", () => {
+  const ids = [
+    "db-acid",
+    "db-isolation-levels",
+    "db-phantom-read",
+    "db-mvcc",
+    "db-snapshot-vs-current-read",
+    "db-row-lock-index",
+    "db-deadlock",
+    "db-btree",
+    "db-clustered-index",
+    "db-composite-index",
+    "db-index-invalid",
+    "db-explain",
+    "db-redo-binlog",
+    "db-index-tradeoff"
+  ];
+
+  ids.forEach((id) => {
+    const entry = questions.find((item) => item.id === id);
+    assert.ok(entry, id);
+    assert.equal(entry.category, "数据库直讲");
+  });
+
+  const acid = questions.find((item) => item.id === "db-acid");
+  assert.match(acid.cppCode, /START TRANSACTION/);
+  assert.match(acid.answerPoints.join(" "), /undo|redo/);
+
+  const btree = questions.find((item) => item.id === "db-btree");
+  assert.match(btree.answerPoints.join(" "), /磁盘|IO/);
 });
 
 test("Hundsun track covers new memory and system programming topics", () => {

@@ -26,6 +26,7 @@
           <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>
           <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>
           <a class="secondary-button" href="./debug-tools-notes.html">调试工具</a>
+          <a class="secondary-button" href="./db-notes.html">数据库</a>
           <a class="secondary-button" href="./index.html?company=hundsun&category=%E6%81%92%E7%94%9F%20%2F%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">知识直讲题</a>
           <a class="secondary-button" href="./index.html?company=hundsun">刷恒生面试题</a>
         </div>
@@ -68,7 +69,7 @@
       <div class="panel-header">
         <div>
           <h2>推荐先学：UF3.0 文档 + 形象笔记 + 知识直讲</h2>
-          <p>完整版适合系统学；背诵版适合临考突击；七篇形象笔记用比喻讲透语言底盘、内存性能、Linux 系统编程与调试工具；知识直讲题带图解与示例代码。</p>
+          <p>完整版适合系统学；背诵版适合临考突击；八篇形象笔记用比喻讲透语言底盘、内存性能、Linux 系统编程、调试工具与数据库；知识直讲题带图解与示例代码。</p>
         </div>
       </div>
       <div class="hundsun-skill-grid">
@@ -108,6 +109,10 @@
           <strong>调试工具 · 实战笔记</strong>
           <span>按现象选工具决策表；gdb 断点/观察点/死锁定位、Sanitizer、valgrind、perf 火焰图、strace</span>
         </a>
+        <a class="hundsun-skill-card" href="./db-notes.html">
+          <strong>数据库 · 形象笔记</strong>
+          <span>转账讲事务 ACID、字典排序讲最左前缀；隔离级别与三种读异常、MVCC 与间隙锁、B+ 树与回表、索引失效、EXPLAIN</span>
+        </a>
         <a class="hundsun-skill-card" href="./index.html?company=hundsun&category=%E6%81%92%E7%94%9F%20%2F%20%E7%9F%A5%E8%AF%86%E7%9B%B4%E8%AE%B2">
           <strong>打开知识直讲题</strong>
           <span>图解 + 详解 + 易踩坑 + 示例代码</span>
@@ -137,7 +142,7 @@
         <article>
           <h3>应会</h3>
           <ul class="hundsun-check-list">
-            <li>数据库基础：事务 ACID、隔离级别直觉</li>
+            <li>数据库基础：事务 ACID、隔离级别直觉（见<a href="./db-notes.html">数据库形象笔记</a>）</li>
             <li>索引使用与写多读少场景下的取舍</li>
             <li>系统分析与模块方案表达能力</li>
             <li>愿意钻研经纪业务，能把规则落成设计与用例</li>
@@ -195,6 +200,10 @@
           <strong>调试工具直讲（通用）</strong>
           <span>图解 + 命令 + 易踩坑：gdb 条件断点/观察点/死锁、ASan、TSan、valgrind、perf 火焰图、strace</span>
         </a>
+        <a class="hundsun-skill-card" href="./index.html?category=%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9B%B4%E8%AE%B2">
+          <strong>数据库直讲（通用）</strong>
+          <span>图解 + SQL + 易踩坑：ACID、隔离级别、MVCC 与间隙锁、B+ 树与回表、最左前缀、索引失效、EXPLAIN</span>
+        </a>
       </div>
     </section>
 
@@ -212,7 +221,7 @@
         </li>
         <li>
           <strong>Day 2 · 并发 + 数据库知识直讲</strong>
-          <span>把锁与不变量、事务与幂等学透，再回头刷对应面试口述题。</span>
+          <span>把锁与不变量、事务与幂等学透，再回头刷对应面试口述题。数据库先读<a href="./db-notes.html">形象笔记</a>再刷直讲题，事务与索引这块能省一半时间。</span>
         </li>
         <li>
           <strong>Day 3 · 业务与性能</strong>

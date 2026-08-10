@@ -257,6 +257,19 @@ function renderAnswerSection(section, openByDefault, useCollapsibleLayout) {
   ].join("");
 }
 
+/**
+ * 代码块里放的不一定是 C++：数据库专题是 SQL，调试工具专题是命令行。
+ */
+function codeSectionTitle(category) {
+  if (category === "数据库直讲") {
+    return "SQL 示例";
+  }
+  if (category === "调试工具直讲") {
+    return "命令示例";
+  }
+  return "C++ 参考代码";
+}
+
 function renderAnswerContent(item) {
   const sections = [];
 
@@ -300,7 +313,7 @@ function renderAnswerContent(item) {
 
   if (item.cppCode) {
     sections.push({
-      title: "C++ 参考代码",
+      title: codeSectionTitle(item.category),
       body: '<pre class="answer-code-block"><code>' + escapeHtml(item.cppCode) + "</code></pre>"
     });
   }
@@ -518,6 +531,7 @@ function renderApp(container, questions, state) {
     '      <button class="secondary-button" type="button" data-hero-action="hundsun">恒生岗位题</button>',
     '      <button class="secondary-button" type="button" data-hero-action="hundsun-knowledge">恒生知识直讲</button>',
     '      <button class="secondary-button" type="button" data-hero-action="debug-knowledge">调试工具直讲</button>',
+    '      <button class="secondary-button" type="button" data-hero-action="db-knowledge">数据库直讲</button>',
     '      <a class="secondary-button" href="./cpp-modern-notes.html">C++ 核心笔记</a>',
     '      <a class="secondary-button" href="./cpp-value-semantics.html">拷贝与移动</a>',
     '      <a class="secondary-button" href="./cpp-containers-notes.html">容器与智能指针</a>',
@@ -525,6 +539,7 @@ function renderApp(container, questions, state) {
     '      <a class="secondary-button" href="./cpp-memory-perf-notes.html">内存与性能</a>',
     '      <a class="secondary-button" href="./linux-sysprog-notes.html">Linux 系统编程</a>',
     '      <a class="secondary-button" href="./debug-tools-notes.html">调试工具</a>',
+    '      <a class="secondary-button" href="./db-notes.html">数据库</a>',
     '      <a class="secondary-button" href="./hundsun.html">恒生面试准备</a>',
     "    </div>",
     "  </div>",
@@ -780,6 +795,14 @@ function mountInterviewSite(globalScope) {
           state.filters.highFrequencyOnly = false;
           pendingCategoryScroll = "调试工具直讲";
           refreshPractice();
+        } else if (action === "db-knowledge") {
+          state.mode = "browse";
+          state.filters.category = "数据库直讲";
+          state.filters.search = "";
+          state.filters.companyTrack = "all";
+          state.filters.highFrequencyOnly = false;
+          pendingCategoryScroll = "数据库直讲";
+          refreshPractice();
         }
 
         rerender();
@@ -888,6 +911,7 @@ if (typeof module !== "undefined" && module.exports) {
     matchesCompanyTrack,
     getCompanyTrackOptions,
     readCompanyTrackFromLocation,
-    readCategoryFromLocation
+    readCategoryFromLocation,
+    codeSectionTitle
   };
 }
